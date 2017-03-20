@@ -111,6 +111,7 @@ struct qusb_phy {
 	int			qusb_phy_reg_offset_cnt;
 
 	u32			tune_val;
+	int			tune_efuse_correction;
 	int			efuse_bit_pos;
 	int			efuse_num_of_bits;
 
@@ -126,6 +127,7 @@ struct qusb_phy {
 	u32			sq_ctrl1_default;
 	u32			sq_ctrl2_default;
 	bool			chirp_disable;
+	bool			put_into_high_z_state;
 
 	struct pinctrl		*pinctrl;
 	struct pinctrl_state	*atest_usb13_suspend;
@@ -355,15 +357,31 @@ static void qusb_phy_get_tune1_param(struct qusb_phy *qphy)
 	 * tune parameters
 	 */
 	qphy->tune_val = readl_relaxed(qphy->efuse_reg);
-	pr_debug("%s(): bit_mask:%d efuse based tune1 value:%d\n",
+	printk("%s(): bit_mask:%d efuse based tune1 value:%d\n",
 				__func__, bit_mask, qphy->tune_val);
 
 	qphy->tune_val = TUNE_VAL_MASK(qphy->tune_val,
 				qphy->efuse_bit_pos, bit_mask);
+
+	if(qphy->tune_efuse_correction) {
+		int corrected_val = qphy->tune_val + qphy->tune_efuse_correction;
+		if (corrected_val < 0)
+			qphy->tune_val = 0;
+		else
+			qphy->tune_val = min_t(unsigned, corrected_val, 7);
+
+		printk("%s(): adjust tune1 value to:%d, correction value = %d\n",
+			__func__, qphy->tune_val, qphy->tune_efuse_correction);
+	}
+
 	reg = readb_relaxed(qphy->base + qphy->phy_reg[PORT_TUNE1]);
 	if (qphy->tune_val) {
 		reg = reg & 0x0f;
 		reg |= (qphy->tune_val << 4);
+        printk("tune1 org = %x", reg);
+		reg = (reg | 0x06);
+		reg = (reg & 0xFE);
+		printk("tune1 val = %x", reg);
 	}
 
 	qphy->tune_val = reg;
@@ -656,6 +674,14 @@ static int qusb_phy_set_suspend(struct usb_phy *phy, int suspend)
 			qusb_phy_reset(qphy);
 			qusb_phy_enable_clocks(qphy, false);
 			qusb_phy_enable_power(qphy, false);
+			/*
+			 * Set put_into_high_z_state to true so next USB
+			 * cable connect, DPF_DMF request performs PHY
+			 * reset and put it into high-z state. For bootup
+			 * with or without USB cable, it doesn't require
+			 * to put QUSB PHY into high-z state.
+			 */
+			qphy->put_into_high_z_state = true;
 		}
 		qphy->suspended = true;
 	} else {
@@ -769,6 +795,34 @@ static int qusb_phy_dpdm_regulator_enable(struct regulator_dev *rdev)
 		}
 		qphy->dpdm_enable = true;
 		qusb_phy_reset(qphy);
+
+		if (qphy->put_into_high_z_state) {
+
+			qusb_phy_enable_clocks(qphy, true);
+
+			dev_dbg(qphy->phy.dev, "RESET QUSB PHY\n");
+			qusb_phy_reset(qphy);
+
+			/*
+			 * Phy in non-driving mode leaves Dp and Dm
+			 * lines in high-Z state. Controller power
+			 * collapse is not switching phy to non-driving
+			 * mode causing charger detection failure. Bring
+			 * phy to non-driving mode by overriding
+			 * controller output via UTMI interface.
+			 */
+			dev_err(qphy->phy.dev, "%s:PWR_CTRL1 value= %x\n", __func__, readl_relaxed(qphy->base + qphy->phy_reg[PWR_CTRL1]));
+			/* Disable the PHY */
+			writel_relaxed(readl_relaxed(qphy->base + qphy->phy_reg[PWR_CTRL1]) |
+				PWR_CTRL1_POWR_DOWN,
+				qphy->base + qphy->phy_reg[PWR_CTRL1]);
+
+			dev_err(qphy->phy.dev, "%s:PWR_CTRL1 valueafter= %x\n", __func__, readl_relaxed(qphy->base + qphy->phy_reg[PWR_CTRL1]));
+			/* Make sure that above write is completed */
+			wmb();
+
+			qusb_phy_enable_clocks(qphy, false);
+		}
 	}
 
 	return ret;
@@ -912,6 +966,10 @@ static int qusb_phy_probe(struct platform_device *pdev)
 						"qcom,efuse-num-bits",
 						&qphy->efuse_num_of_bits);
 			}
+
+            of_property_read_u32(dev->of_node,
+            	"qcom,tune-efuse-correction",
+            	&qphy->tune_efuse_correction);
 
 			if (ret) {
 				dev_err(dev,

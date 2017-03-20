@@ -26,6 +26,7 @@ enum print_reason {
 	PR_MISC		= BIT(2),
 	PR_PARALLEL	= BIT(3),
 	PR_OTG		= BIT(4),
+	PR_INFO		= BIT(5),
 };
 
 #define DEFAULT_VOTER			"DEFAULT_VOTER"
@@ -62,11 +63,13 @@ enum print_reason {
 #define CC2_WA_VOTER			"CC2_WA_VOTER"
 #define QNOVO_VOTER			"QNOVO_VOTER"
 #define BATT_PROFILE_VOTER		"BATT_PROFILE_VOTER"
+#define BATT_THERMAL_VOTER		"BATT_THERMAL_VOTER"
 #define OTG_DELAY_VOTER			"OTG_DELAY_VOTER"
 #define USBIN_I_VOTER			"USBIN_I_VOTER"
 #define WEAK_CHARGER_VOTER		"WEAK_CHARGER_VOTER"
 #define OTG_VOTER			"OTG_VOTER"
 #define PL_FCC_LOW_VOTER		"PL_FCC_LOW_VOTER"
+#define CC_FLOAT_VOTER         "CC_FLOAT_VOTER"
 #define WBC_VOTER			"WBC_VOTER"
 #define MOISTURE_VOTER			"MOISTURE_VOTER"
 
@@ -74,6 +77,7 @@ enum print_reason {
 #define OTG_MAX_ATTEMPTS	3
 #define BOOST_BACK_STORM_COUNT	3
 #define WEAK_CHG_STORM_COUNT	8
+#define CC_FLOAT_WORK_START_DELAY_MS   700
 
 enum smb_mode {
 	PARALLEL_MASTER = 0,
@@ -310,6 +314,7 @@ struct smb_charger {
 	struct work_struct	legacy_detection_work;
 	struct delayed_work	uusb_otg_work;
 	struct delayed_work	bb_removal_work;
+	struct delayed_work	cc_float_charge_work;
 
 	/* cached status */
 	int			voltage_min_uv;
@@ -331,6 +336,7 @@ struct smb_charger {
 	bool			otg_en;
 	bool			vconn_en;
 	bool			suspend_input_on_debug_batt;
+	bool			aging_running;
 	int			otg_attempts;
 	int			vconn_attempts;
 	int			default_icl_ua;
@@ -358,6 +364,7 @@ struct smb_charger {
 	int			boost_current_ua;
 	int			temp_speed_reading_count;
 	bool			fake_usb_insertion;
+	bool			cc_float_detected;
 
 	/* extcon for VBUS / ID notification to USB for uUSB */
 	struct extcon_dev	*extcon;

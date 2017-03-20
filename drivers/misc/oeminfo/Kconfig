@@ -1,0 +1,9 @@
+#
+# oeminfo drivers
+#
+
+config OEMINFO
+	bool "oeminfo_driver.c"
+	default n
+	help
+	  Say Y here to enable oeminfo driver.

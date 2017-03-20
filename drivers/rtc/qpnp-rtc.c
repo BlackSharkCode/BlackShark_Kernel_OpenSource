@@ -348,9 +348,20 @@ static int
 qpnp_rtc_read_alarm(struct device *dev, struct rtc_wkalrm *alarm)
 {
 	int rc;
-	u8 value[4];
+	u8 value[4], ctrl_reg;
 	unsigned long secs;
 	struct qpnp_rtc *rtc_dd = dev_get_drvdata(dev);
+
+	rc = qpnp_read_wrapper(rtc_dd, &ctrl_reg,
+				rtc_dd->alarm_base + REG_OFFSET_ALARM_CTRL1, 1);
+	if (rc) {
+		dev_err(dev, "Read from ALARM control reg failed\n");
+		return rc;
+	}
+	if (ctrl_reg & BIT_RTC_ALARM_ENABLE) {
+		alarm->enabled = 1;
+		dev_dbg(dev, "Alarm enabled\n");
+	}
 
 	rc = qpnp_read_wrapper(rtc_dd, value,
 				rtc_dd->alarm_base + REG_OFFSET_ALARM_RW,

@@ -22,6 +22,7 @@
 #include <linux/qpnp/qpnp-revid.h>
 #include "fg-core.h"
 #include "fg-reg.h"
+#include "step-chg-jeita.h"
 
 #define FG_GEN3_DEV_NAME	"qcom,fg-gen3"
 
@@ -392,7 +393,7 @@ static struct fg_alg_flag pmi8998_v2_alg_flags[] = {
 	},
 };
 
-static int fg_gen3_debug_mask;
+static int fg_gen3_debug_mask=0x02;
 module_param_named(
 	debug_mask, fg_gen3_debug_mask, int, 0600
 );
@@ -409,6 +410,8 @@ module_param_named(
 
 static int fg_restart;
 static bool fg_sram_dump;
+
+static int aging_running;
 
 /* All getters HERE */
 
@@ -866,6 +869,7 @@ static bool is_debug_batt_id(struct fg_chip *chip)
 		chip->batt_id_ohms)) {
 		fg_dbg(chip, FG_POWER_SUPPLY, "Debug battery id: %dohms\n",
 			chip->batt_id_ohms);
+		pr_err("debug batt_id range:[%d %d] batt_id:%d\n", debug_batt_id[0], debug_batt_id[1], chip->batt_id_ohms);
 		return true;
 	}
 
@@ -1887,13 +1891,11 @@ static int fg_charge_full_update(struct fg_chip *chip)
 		 * If charge_done is still set, wait for recharging or
 		 * discharging to happen.
 		 */
-		if (chip->charge_done)
-			goto out;
-
-		rc = fg_configure_full_soc(chip, bsoc);
-		if (rc < 0)
-			goto out;
-
+		if (msoc_raw <= recharge_soc) {
+			rc = fg_configure_full_soc(chip, bsoc);
+			if (rc < 0)
+				goto out;
+		}
 		chip->charge_full = false;
 		fg_dbg(chip, FG_STATUS, "msoc_raw = %d bsoc: %d recharge_soc: %d delta_soc: %d\n",
 			msoc_raw, bsoc >> 8, recharge_soc, chip->delta_soc);
@@ -2081,37 +2083,27 @@ static int fg_adjust_recharge_soc(struct fg_chip *chip)
 	 * the recharge SOC threshold based on the monotonic SOC at which
 	 * the charge termination had happened.
 	 */
-	if (is_input_present(chip)) {
-		if (chip->charge_done) {
-			if (!chip->recharge_soc_adjusted) {
-				/* Get raw monotonic SOC for calculation */
-				rc = fg_get_msoc(chip, &msoc);
-				if (rc < 0) {
-					pr_err("Error in getting msoc, rc=%d\n",
-						rc);
-					return rc;
-				}
-
-				/* Adjust the recharge_soc threshold */
-				new_recharge_soc = msoc - (FULL_CAPACITY -
-								recharge_soc);
-				chip->recharge_soc_adjusted = true;
-			} else {
-				/* adjusted already, do nothing */
-				return 0;
-			}
-		} else {
-			if (!chip->recharge_soc_adjusted)
-				return 0;
-
-			/* Restore the default value */
-			new_recharge_soc = recharge_soc;
-			chip->recharge_soc_adjusted = false;
+	if (is_input_present(chip) && !chip->recharge_soc_adjusted
+			&& chip->charge_done) {
+		if (chip->health == POWER_SUPPLY_HEALTH_GOOD)
+			return 0;
+		/* Get raw monotonic SOC for calculation */
+		rc = fg_get_msoc(chip, &msoc);
+		if (rc < 0) {
+			pr_err("Error in getting msoc, rc=%d\n", rc);
+			return rc;
 		}
-	} else {
+
+		/* Adjust the recharge_soc threshold */
+		new_recharge_soc = msoc - (FULL_CAPACITY - recharge_soc);
+			chip->recharge_soc_adjusted = true;
+	} else if ((!is_input_present(chip) || chip->health == POWER_SUPPLY_HEALTH_GOOD)
+						&& chip->recharge_soc_adjusted) {
 		/* Restore the default value */
 		new_recharge_soc = recharge_soc;
 		chip->recharge_soc_adjusted = false;
+	} else {
+		return 0;
 	}
 
 	rc = fg_set_recharge_soc(chip, new_recharge_soc);
@@ -2883,6 +2875,8 @@ static void profile_load_work(struct work_struct *work)
 		goto out;
 	}
 
+	qcom_step_chg_init(chip->dev, 0, 1);
+
 	if (!chip->profile_available)
 		goto out;
 
@@ -3609,6 +3603,65 @@ end_work:
 	mutex_unlock(&chip->ttf.lock);
 }
 
+static void aging_jeita_set(struct fg_chip *chip, bool aging_running)
+{
+	int rc;
+
+	pr_info("aging_jeita_set aging_running=%d",aging_running);
+	if (aging_running) {
+		rc = fg_set_jeita_threshold(chip, JEITA_COLD,
+			chip->dt.aging_jeita_thresholds[JEITA_COLD] * 10);
+		if (rc < 0) {
+			pr_err("Error in writing aging jeita_cold, rc=%d\n", rc);
+		}
+
+		rc = fg_set_jeita_threshold(chip, JEITA_COOL,
+			chip->dt.aging_jeita_thresholds[JEITA_COOL] * 10);
+		if (rc < 0) {
+			pr_err("Error in writing aging jeita_cool, rc=%d\n", rc);
+		}
+
+		rc = fg_set_jeita_threshold(chip, JEITA_WARM,
+			chip->dt.aging_jeita_thresholds[JEITA_WARM] * 10);
+		if (rc < 0) {
+			pr_err("Error in writing aging jeita_warm, rc=%d\n", rc);
+		}
+
+		rc = fg_set_jeita_threshold(chip, JEITA_HOT,
+			chip->dt.aging_jeita_thresholds[JEITA_HOT] * 10);
+		if (rc < 0) {
+			pr_err("Error in writing aging jeita_hot, rc=%d\n", rc);
+		}
+		pr_info("aging change sw-jeita\n");
+	} else {
+		rc = fg_set_jeita_threshold(chip, JEITA_COLD,
+			chip->dt.jeita_thresholds[JEITA_COLD] * 10);
+		if (rc < 0) {
+			pr_err("Error in writing jeita_cold, rc=%d\n", rc);
+		}
+
+		rc = fg_set_jeita_threshold(chip, JEITA_COOL,
+			chip->dt.jeita_thresholds[JEITA_COOL] * 10);
+		if (rc < 0) {
+			pr_err("Error in writing jeita_cool, rc=%d\n", rc);
+		}
+
+		rc = fg_set_jeita_threshold(chip, JEITA_WARM,
+			chip->dt.jeita_thresholds[JEITA_WARM] * 10);
+		if (rc < 0) {
+			pr_err("Error in writing jeita_warm, rc=%d\n", rc);
+		}
+
+		rc = fg_set_jeita_threshold(chip, JEITA_HOT,
+			chip->dt.jeita_thresholds[JEITA_HOT] * 10);
+		if (rc < 0) {
+			pr_err("Error in writing jeita_hot, rc=%d\n", rc);
+		}
+		pr_info("normal change sw-jeita\n");
+	}
+}
+
+
 /* PSY CALLBACKS STAY HERE */
 
 static int fg_psy_get_property(struct power_supply *psy,
@@ -3733,6 +3786,9 @@ static int fg_psy_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_CC_STEP_SEL:
 		pval->intval = chip->ttf.cc_step.sel;
 		break;
+	case POWER_SUPPLY_PROP_AGING_RUNNING:
+		pval->intval = aging_running;
+		break;
 	default:
 		pr_err("unsupported property %d\n", psp);
 		rc = -EINVAL;
@@ -3833,6 +3889,11 @@ static int fg_psy_set_property(struct power_supply *psy,
 			return rc;
 		}
 		break;
+	case POWER_SUPPLY_PROP_AGING_RUNNING:
+		aging_running = pval->intval;
+		aging_jeita_set(chip, (pval->intval==1) ? true : false);
+		qcom_step_chg_aging_mode((pval->intval==1) ? true : false);
+		break;
 	default:
 		break;
 	}
@@ -3853,6 +3914,7 @@ static int fg_property_is_writeable(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_COOL_TEMP:
 	case POWER_SUPPLY_PROP_WARM_TEMP:
 	case POWER_SUPPLY_PROP_HOT_TEMP:
+	case POWER_SUPPLY_PROP_AGING_RUNNING:
 		return 1;
 	default:
 		break;
@@ -3930,6 +3992,7 @@ static enum power_supply_property fg_psy_props[] = {
 	POWER_SUPPLY_PROP_CONSTANT_CHARGE_VOLTAGE,
 	POWER_SUPPLY_PROP_CC_STEP,
 	POWER_SUPPLY_PROP_CC_STEP_SEL,
+	POWER_SUPPLY_PROP_AGING_RUNNING,
 };
 
 static const struct power_supply_desc fg_psy_desc = {
@@ -4757,7 +4820,11 @@ static int fg_parse_ki_coefficients(struct fg_chip *chip)
 #define DEFAULT_BATT_TEMP_COLD		0
 #define DEFAULT_BATT_TEMP_COOL		5
 #define DEFAULT_BATT_TEMP_WARM		45
-#define DEFAULT_BATT_TEMP_HOT		50
+#define DEFAULT_BATT_TEMP_HOT		55
+#define DEFAULT_AGING_BATT_TEMP_COLD	0
+#define DEFAULT_AGING_BATT_TEMP_COOL	5
+#define DEFAULT_AGING_BATT_TEMP_WARM	45
+#define DEFAULT_AGING_BATT_TEMP_HOT	68
 #define DEFAULT_CL_START_SOC		15
 #define DEFAULT_CL_MIN_TEMP_DECIDEGC	150
 #define DEFAULT_CL_MAX_TEMP_DECIDEGC	500
@@ -4953,6 +5020,20 @@ static int fg_parse_dt(struct fg_chip *chip)
 				chip->dt.jeita_thresholds, NUM_JEITA_LEVELS);
 		if (rc < 0)
 			pr_warn("Error reading Jeita thresholds, default values will be used rc:%d\n",
+				rc);
+	}
+
+	chip->dt.aging_jeita_thresholds[JEITA_COLD] = DEFAULT_AGING_BATT_TEMP_COLD;
+	chip->dt.aging_jeita_thresholds[JEITA_COOL] = DEFAULT_AGING_BATT_TEMP_COOL;
+	chip->dt.aging_jeita_thresholds[JEITA_WARM] = DEFAULT_AGING_BATT_TEMP_WARM;
+	chip->dt.aging_jeita_thresholds[JEITA_HOT] = DEFAULT_AGING_BATT_TEMP_HOT;
+	if (of_property_count_elems_of_size(node, "qcom,fg-aging-jeita-thresholds",
+		sizeof(u32)) == NUM_JEITA_LEVELS) {
+		rc = of_property_read_u32_array(node,
+				"qcom,fg-aging-jeita-thresholds",
+				chip->dt.aging_jeita_thresholds, NUM_JEITA_LEVELS);
+		if (rc < 0)
+			pr_warn("Error reading Aging Jeita thresholds, default values will be used rc:%d\n",
 				rc);
 	}
 
@@ -5180,6 +5261,7 @@ static int fg_gen3_probe(struct platform_device *pdev)
 	chip->online_status = -EINVAL;
 	chip->batt_id_ohms = -EINVAL;
 	chip->regmap = dev_get_regmap(chip->dev->parent, NULL);
+	aging_running = 0;
 	if (!chip->regmap) {
 		dev_err(chip->dev, "Parent regmap is unavailable\n");
 		return -ENXIO;

@@ -925,6 +925,9 @@ static int _sde_kms_setup_displays(struct drm_device *dev,
 		.post_kickoff = dsi_conn_post_kickoff,
 		.check_status = dsi_display_check_status,
 		.enable_event = dsi_conn_enable_event,
+#if defined(CONFIG_IRIS2P_FULL_SUPPORT)
+		.cancel_esd_thread = notify_iris_esd_cancel,
+#endif
 		.cmd_transfer = dsi_display_cmd_transfer,
 	};
 	static const struct sde_connector_ops wb_ops = {

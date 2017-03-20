@@ -551,13 +551,13 @@
 		qcom,supported-modes =
 			<RPMH_REGULATOR_MODE_LDO_LPM
 			 RPMH_REGULATOR_MODE_LDO_HPM>;
-		qcom,mode-threshold-currents = <0 10000>;
+		qcom,mode-threshold-currents = <0 800000>;
 		pm8998_l21: regulator-l21 {
 			regulator-name = "pm8998_l21";
 			qcom,set = <RPMH_REGULATOR_SET_ALL>;
-			regulator-min-microvolt = <2704000>;
-			regulator-max-microvolt = <2960000>;
-			qcom,init-voltage = <2704000>;
+			regulator-min-microvolt = <3500000>;
+			regulator-max-microvolt = <3500000>;
+			qcom,init-voltage = <3500000>;
 			qcom,init-mode = <RPMH_REGULATOR_MODE_LDO_LPM>;
 		};
 	};

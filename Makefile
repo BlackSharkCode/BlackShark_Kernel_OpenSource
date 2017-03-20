@@ -393,7 +393,8 @@ LINUXINCLUDE    := \
 		-I$(objtree)/arch/$(hdr-arch)/include/generated/uapi \
 		-I$(objtree)/arch/$(hdr-arch)/include/generated \
 		$(if $(KBUILD_SRC), -I$(srctree)/include) \
-		-I$(objtree)/include
+		-I$(objtree)/include \
+                $(HAWKEYE_KEN_INC)
 
 LINUXINCLUDE	+= $(filter-out $(LINUXINCLUDE),$(USERINCLUDE))
 

@@ -1,0 +1,40 @@
+/*
+ * Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+#include "../evt/sdm845-shark-evt.dtsi"
+#include "sdm845-pinctrl-shark-dvt.dtsi"
+#include "sdm845-camera-sensor-shark-dvt.dtsi"
+
+&pmi8998_wled {
+        status = "okay";
+        qcom,led-strings-list = [00 01 02 03];
+	qcom,dim-mode = "digtal";
+	qcom,en-cabc = <1>;
+};
+
+&qupv3_se3_i2c {
+        iris2p@22 {
+                compatible = "pxlw,iris2p_i2c";
+                reg = <0x22>;
+        };
+};
+
+&dsi_synaptics_td4310_cmd_tianma {
+        qcom,mdss-dsi-panel-status-check-mode = "reg_read";
+        qcom,mdss-dsi-panel-status-command = [06 01 00 01 00 00 01 0a];
+        qcom,mdss-dsi-panel-status-command-state = "dsi_hs_mode";
+        qcom,mdss-dsi-panel-status-value = <0x9c>;
+        qcom,mdss-dsi-panel-on-check-value = <0x9c>;
+        qcom,mdss-dsi-panel-status-read-length = <1>;
+};
+

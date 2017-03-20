@@ -27,6 +27,7 @@
 #include <linux/slab.h>
 #include <linux/pmic-voter.h>
 #include <linux/workqueue.h>
+#include <linux/kthread.h>
 #include "battery.h"
 
 #define DRV_MAJOR_VERSION	1
@@ -36,6 +37,7 @@
 #define TAPER_STEPPER_VOTER		"TAPER_STEPPER_VOTER"
 #define TAPER_END_VOTER			"TAPER_END_VOTER"
 #define PL_TAPER_EARLY_BAD_VOTER	"PL_TAPER_EARLY_BAD_VOTER"
+#define PL_HEALTH_BAD_VOTER		"PL_HEALTH_BAD_VOTER"
 #define PARALLEL_PSY_VOTER		"PARALLEL_PSY_VOTER"
 #define PL_HW_ABSENT_VOTER		"PL_HW_ABSENT_VOTER"
 #define PL_VOTER			"PL_VOTER"
@@ -78,13 +80,15 @@ struct pl_data {
 	struct notifier_block	nb;
 };
 
+struct task_struct * smb138x_health_thread = NULL;
+
 struct pl_data *the_chip;
 
 enum print_reason {
 	PR_PARALLEL	= BIT(0),
 };
 
-static int debug_mask;
+static int debug_mask=0x01;
 module_param_named(debug_mask, debug_mask, int, 0600);
 
 #define pl_dbg(chip, reason, fmt, ...)				\
@@ -424,13 +428,13 @@ static void get_fcc_split(struct pl_data *chip, int total_ua,
 	 * through main charger's BATFET, keep the main charger's FCC
 	 * to the votable result.
 	 */
-	if (chip->pl_batfet_mode == POWER_SUPPLY_PL_STACKED_BATFET)
-		*master_ua = max(0, total_ua);
-	else
+//	if (chip->pl_batfet_mode == POWER_SUPPLY_PL_STACKED_BATFET)
+//		*master_ua = max(0, total_ua);
+//	else
 		*master_ua = max(0, total_ua - *slave_ua);
 }
 
-#define MINIMUM_PARALLEL_FCC_UA		500000
+#define MINIMUM_PARALLEL_FCC_UA		300000
 #define PL_TAPER_WORK_DELAY_MS		500
 #define TAPER_RESIDUAL_PCT		90
 #define TAPER_REDUCTION_UA		200000
@@ -530,7 +534,7 @@ static int pl_fcc_vote_callback(struct votable *votable, void *data,
 	return 0;
 }
 
-#define PARALLEL_FLOAT_VOLTAGE_DELTA_UV 50000
+#define PARALLEL_FLOAT_VOLTAGE_DELTA_UV 100000
 static int pl_fv_vote_callback(struct votable *votable, void *data,
 			int fv_uv, const char *client)
 {
@@ -568,6 +572,7 @@ static int pl_fv_vote_callback(struct votable *votable, void *data,
 
 #define ICL_STEP_UA	25000
 #define PL_DELAY_MS     3000
+#define PL_ENABLE_MIN_ICL 700000
 static int usb_icl_vote_callback(struct votable *votable, void *data,
 			int icl_ua, const char *client)
 {
@@ -590,7 +595,7 @@ static int usb_icl_vote_callback(struct votable *votable, void *data,
 	vote(chip->pl_disable_votable, ICL_CHANGE_VOTER, true, 0);
 
 	/*
-	 * if (ICL < 1400)
+	 * if (ICL < 500)
 	 *	disable parallel charger using USBIN_I_VOTER
 	 * else
 	 *	instead of re-enabling here rely on status_changed_work
@@ -598,7 +603,7 @@ static int usb_icl_vote_callback(struct votable *votable, void *data,
 	 *	unvote USBIN_I_VOTER) the status_changed_work enables
 	 *	USBIN_I_VOTER based on settled current.
 	 */
-	if (icl_ua <= 1400000)
+	if (icl_ua <= PL_ENABLE_MIN_ICL)
 		vote(chip->pl_enable_votable_indirect, USBIN_I_VOTER, false, 0);
 	else
 		schedule_delayed_work(&chip->status_change_work,
@@ -1020,10 +1025,10 @@ static void handle_settled_icl_change(struct pl_data *chip)
 	}
 	main_limited = pval.intval;
 
-	if ((main_limited && (main_settled_ua + chip->pl_settled_ua) < 1400000)
+	if ((main_limited && (main_settled_ua + chip->pl_settled_ua) < PL_ENABLE_MIN_ICL)
 			|| (main_settled_ua == 0)
 			|| ((total_current_ua >= 0) &&
-				(total_current_ua <= 1400000)))
+				(total_current_ua <= PL_ENABLE_MIN_ICL)))
 		vote(chip->pl_enable_votable_indirect, USBIN_I_VOTER, false, 0);
 	else
 		vote(chip->pl_enable_votable_indirect, USBIN_I_VOTER, true, 0);
@@ -1081,8 +1086,10 @@ static void handle_parallel_in_taper(struct pl_data *chip)
 	 * we disable parallel charger
 	 */
 	if (pval.intval == POWER_SUPPLY_CHARGE_TYPE_TAPER) {
-		vote(chip->pl_disable_votable, PL_TAPER_EARLY_BAD_VOTER,
-				true, 0);
+	/*
+	 * we would like parallel-mode standby in taper phase. so we do
+	 * nothing here.
+	 */
 		return;
 	}
 }
@@ -1180,6 +1187,49 @@ static int pl_determine_initial_status(struct pl_data *chip)
 {
 	status_change_work(&chip->status_change_work.work);
 	return 0;
+}
+
+static int smb138x_health_thread_func(void *arg)
+{
+	struct pl_data *chip = arg;
+	union power_supply_propval val= {0, };
+	int rc = 0;
+	while(1){
+		msleep(20000);
+		rc = power_supply_get_property(chip->batt_psy,POWER_SUPPLY_PROP_HEALTH, &val);
+		if(rc<0){
+			pr_info("smb138x_health_thread_func can't get batt health batt");
+			continue;
+		}
+
+		if(val.intval != POWER_SUPPLY_HEALTH_GOOD){
+			if(!is_client_vote_enabled(chip->pl_disable_votable, PL_HEALTH_BAD_VOTER)){
+				vote(chip->pl_disable_votable, PL_HEALTH_BAD_VOTER, true, 0);
+				pr_info("smb138x_health_thread_func disable slave charger reason=%d", val.intval);
+			}
+		} else {
+			if(is_client_vote_enabled(chip->pl_disable_votable, PL_HEALTH_BAD_VOTER)){
+				vote(chip->pl_disable_votable, PL_HEALTH_BAD_VOTER, false, 0);
+				pr_info("smb138x_health_thread_func enable slave charger");
+			}
+		}
+	}
+	return 0;
+}
+
+static void smb138x_health_thread_start(struct pl_data *chip){
+	smb138x_health_thread = kthread_run(smb138x_health_thread_func, chip, "smb138x_health_thread");
+	if (IS_ERR(smb138x_health_thread))
+	{
+		pr_err("Create smb138x_health_thread failed");
+	}
+}
+
+static void smb138x_health_thread_stop(void){
+	if(smb138x_health_thread){
+		kthread_stop(smb138x_health_thread);
+		smb138x_health_thread=NULL;
+	}
 }
 
 #define DEFAULT_RESTRICTED_CURRENT_UA	1000000
@@ -1287,6 +1337,8 @@ int qcom_batt_init(void)
 
 	the_chip = chip;
 
+	smb138x_health_thread_start(chip);
+
 	return 0;
 
 unreg_notifier:
@@ -1326,4 +1378,5 @@ void qcom_batt_deinit(void)
 	wakeup_source_unregister(chip->pl_ws);
 	the_chip = NULL;
 	kfree(chip);
+	smb138x_health_thread_stop();
 }

@@ -28,6 +28,10 @@
 #include "smb-lib.h"
 #include "storm-watch.h"
 #include <linux/pmic-voter.h>
+#include <linux/hw_dev_dec.h>
+#include <linux/of_gpio.h>
+#include <linux/gpio.h>
+
 
 #define SMB2_DEFAULT_WPWR_UW	8000000
 
@@ -169,6 +173,7 @@ struct smb_dt_props {
 	bool	no_battery;
 	bool	hvdcp_disable;
 	bool	auto_recharge_soc;
+	int	slave_shdn;
 	int	wd_bark_time;
 };
 
@@ -179,7 +184,7 @@ struct smb2 {
 	bool			bad_part;
 };
 
-static int __debug_mask;
+static int __debug_mask=0x38;
 module_param_named(
 	debug_mask, __debug_mask, int, 0600
 );
@@ -198,6 +203,7 @@ module_param_named(
 	audio_headset_drp_wait_ms, __audio_headset_drp_wait_ms, int, 0600
 );
 
+static int board_is_dvt2 = 0;
 #define MICRO_1P5A		1500000
 #define MICRO_P1A		100000
 #define OTG_DEFAULT_DEGLITCH_TIME_MS	50
@@ -222,6 +228,12 @@ static int smb2_parse_dt(struct smb2 *chip)
 
 	chg->sw_jeita_enabled = of_property_read_bool(node,
 				"qcom,sw-jeita-enable");
+
+	chg->aging_running = of_property_read_bool(node,
+				"qcom,aging_running");
+
+	rc = of_property_read_u32(node, "shark,board-is-dvt2", &board_is_dvt2);
+	pr_err("===== shark,board-is-dvt2 is %d =====\n", board_is_dvt2);
 
 	rc = of_property_read_u32(node, "qcom,wd-bark-time-secs",
 					&chip->dt.wd_bark_time);
@@ -327,6 +339,9 @@ static int smb2_parse_dt(struct smb2 *chip)
 					&chg->otg_delay_ms);
 	if (rc < 0)
 		chg->otg_delay_ms = OTG_DEFAULT_DEGLITCH_TIME_MS;
+
+	chip->dt.slave_shdn = of_get_named_gpio(node, "slave-shdn", 0);
+	gpio_request(chip->dt.slave_shdn, "GPIO9");
 
 	return 0;
 }
@@ -952,6 +967,7 @@ static enum power_supply_property smb2_batt_props[] = {
 	POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT_MAX,
 	POWER_SUPPLY_PROP_TEMP,
 	POWER_SUPPLY_PROP_TECHNOLOGY,
+	POWER_SUPPLY_PROP_BATTERY_CHARGING_ENABLED,
 	POWER_SUPPLY_PROP_STEP_CHARGING_ENABLED,
 	POWER_SUPPLY_PROP_SW_JEITA_ENABLED,
 	POWER_SUPPLY_PROP_CHARGE_DONE,
@@ -963,6 +979,8 @@ static enum power_supply_property smb2_batt_props[] = {
 	POWER_SUPPLY_PROP_CHARGE_CONTROL_LIMIT_MAX,
 	POWER_SUPPLY_PROP_CHARGE_CONTROL_LIMIT,
 	POWER_SUPPLY_PROP_CHARGE_COUNTER,
+	POWER_SUPPLY_PROP_AGING_RUNNING,
+	POWER_SUPPLY_PROP_THERMAL_CHARGE_CURRENT_MAX,
 };
 
 static int smb2_batt_get_prop(struct power_supply *psy,
@@ -1014,6 +1032,9 @@ static int smb2_batt_get_prop(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_INPUT_CURRENT_LIMITED:
 		rc = smblib_get_prop_input_current_limited(chg, val);
 		break;
+	case POWER_SUPPLY_PROP_BATTERY_CHARGING_ENABLED:
+		val->intval=!get_effective_result(chg->chg_disable_votable);
+		break;
 	case POWER_SUPPLY_PROP_STEP_CHARGING_ENABLED:
 		val->intval = chg->step_chg_enabled;
 		break;
@@ -1047,6 +1068,9 @@ static int smb2_batt_get_prop(struct power_supply *psy,
 		break;
 	case POWER_SUPPLY_PROP_TEMP:
 		rc = smblib_get_prop_batt_temp(chg, val);
+		if(chg->aging_running) {
+			val->intval = min(600,val->intval);
+		}
 		break;
 	case POWER_SUPPLY_PROP_TECHNOLOGY:
 		val->intval = POWER_SUPPLY_TECHNOLOGY_LION;
@@ -1076,6 +1100,13 @@ static int smb2_batt_get_prop(struct power_supply *psy,
 		break;
 	case POWER_SUPPLY_PROP_CHARGE_COUNTER:
 		rc = smblib_get_prop_batt_charge_counter(chg, val);
+		break;
+	case POWER_SUPPLY_PROP_AGING_RUNNING:
+		val->intval = chg->aging_running;
+		break;
+	case POWER_SUPPLY_PROP_THERMAL_CHARGE_CURRENT_MAX:
+		val->intval = get_client_vote(chg->fcc_votable,
+					      BATT_THERMAL_VOTER);
 		break;
 	default:
 		pr_err("batt power supply prop %d not supported\n", psp);
@@ -1136,6 +1167,9 @@ static int smb2_batt_set_prop(struct power_supply *psy,
 			vote(chg->fcc_votable, BATT_PROFILE_VOTER, false, 0);
 		}
 		break;
+	case POWER_SUPPLY_PROP_BATTERY_CHARGING_ENABLED:
+		vote(chg->chg_disable_votable, USER_VOTER, !val->intval, 0);
+		break;
 	case POWER_SUPPLY_PROP_STEP_CHARGING_ENABLED:
 		chg->step_chg_enabled = !!val->intval;
 		break;
@@ -1172,6 +1206,16 @@ static int smb2_batt_set_prop(struct power_supply *psy,
 		chg->die_health = val->intval;
 		power_supply_changed(chg->batt_psy);
 		break;
+	case POWER_SUPPLY_PROP_AGING_RUNNING:
+		chg->aging_running = !!val->intval;
+		break;
+	case POWER_SUPPLY_PROP_THERMAL_CHARGE_CURRENT_MAX:
+		if(chg->aging_running) {
+			vote(chg->fcc_votable, BATT_THERMAL_VOTER, true, 4000000);
+		} else {
+			vote(chg->fcc_votable, BATT_THERMAL_VOTER, true, val->intval);
+		}
+		break;
 	default:
 		rc = -EINVAL;
 	}
@@ -1191,9 +1235,13 @@ static int smb2_batt_prop_is_writeable(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_DP_DM:
 	case POWER_SUPPLY_PROP_RERUN_AICL:
 	case POWER_SUPPLY_PROP_INPUT_CURRENT_LIMITED:
+	case POWER_SUPPLY_PROP_BATTERY_CHARGING_ENABLED:
 	case POWER_SUPPLY_PROP_STEP_CHARGING_ENABLED:
 	case POWER_SUPPLY_PROP_SW_JEITA_ENABLED:
 	case POWER_SUPPLY_PROP_DIE_HEALTH:
+	case POWER_SUPPLY_PROP_AGING_RUNNING:
+	case POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT_MAX:
+	case POWER_SUPPLY_PROP_THERMAL_CHARGE_CURRENT_MAX:
 		return 1;
 	default:
 		break;
@@ -1421,6 +1469,17 @@ static int smb2_configure_typec(struct smb_charger *chg)
 		return rc;
 	}
 
+	if (board_is_dvt2) {
+		/*disable VBUS < 1V check for ptc debugging*/
+		rc = smblib_masked_write(chg, OTG_CFG_REG,
+						QUICKSTART_OTG_FASTROLESWAP_BIT, QUICKSTART_OTG_FASTROLESWAP_BIT);
+		dev_err(chg->dev, "disable VBUS < 1V check for ptc debugging rc=%d\n", rc);
+		if (rc < 0) {
+			dev_err(chg->dev, "disable VBUS < 1V check for ptc debugging rc=%d\n", rc);
+			return rc;
+		}
+	}
+
 	return rc;
 }
 
@@ -1588,6 +1647,13 @@ static int smb2_init_hw(struct smb2 *chip)
 	vote(chg->hvdcp_enable_votable, MICRO_USB_VOTER,
 		(chg->connector_type == POWER_SUPPLY_CONNECTOR_MICRO_USB), 0);
 
+	/*limit qc2.0 volt-adjust to 9v and qc3.0 to 6.6v*/
+	smblib_masked_write(chg, HVDCP_PULSE_COUNT_MAX_REG,
+			PULSE_COUNT_QC2P0_12V | PULSE_COUNT_QC2P0_9V,
+			PULSE_COUNT_QC2P0_9V);
+	smblib_masked_write(chg, HVDCP_PULSE_COUNT_MAX_REG,
+			PULSE_COUNT_QC3P0_MASK,
+			0x7);
 	/*
 	 * AICL configuration:
 	 * start from min and AICL ADC disable
@@ -2321,6 +2387,9 @@ static int smb2_probe(struct platform_device *pdev)
 	/* set driver data before resources request it */
 	platform_set_drvdata(pdev, chip);
 
+	/* wakeup init should be done at the beginning of smb2_probe */
+	device_init_wakeup(chg->dev, true);
+
 	rc = smb2_init_vbus_regulator(chip);
 	if (rc < 0) {
 		pr_err("Couldn't initialize vbus regulator rc=%d\n",
@@ -2436,7 +2505,10 @@ static int smb2_probe(struct platform_device *pdev)
 	}
 	batt_charge_type = val.intval;
 
-	device_init_wakeup(chg->dev, true);
+
+#ifdef CONFIG_HW_DEV_DCT
+	set_hw_dev_flag(DEV_PERIPHIAL_CHARGER_MASTER);
+#endif
 
 	pr_info("QPNP SMB2 probed successfully usb:present=%d type=%d batt:present = %d health = %d charge = %d\n",
 		usb_present, chg->real_charger_type,
@@ -2501,6 +2573,9 @@ static void smb2_shutdown(struct platform_device *pdev)
 	/* force enable APSD */
 	smblib_masked_write(chg, USBIN_OPTIONS_1_CFG_REG,
 				 AUTO_SRC_DETECT_BIT, AUTO_SRC_DETECT_BIT);
+
+	gpio_set_value(chip->dt.slave_shdn, 0);
+	pr_err("slave charger shdn is %d\n", gpio_get_value(chip->dt.slave_shdn));
 }
 
 static const struct of_device_id match_table[] = {

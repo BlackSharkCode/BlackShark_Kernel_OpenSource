@@ -183,7 +183,9 @@
 			&pcie0_perst_default
 			&pcie0_wake_default>;
 
-		perst-gpio = <&tlmm 35 0>;
+		//Modify becaulse rear aux camera imx376aux gpio conflict, terry.long@blackshark.com, 2017.11.06
+		//perst-gpio = <&tlmm 35 0>;
+		perst-gpio = <&tlmm 36 0>;
 		wake-gpio = <&tlmm 37 0>;
 
 		gdsc-vdd-supply = <&pcie_0_gdsc>;

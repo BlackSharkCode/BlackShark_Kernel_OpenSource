@@ -1,0 +1,41 @@
+menu "zeusis linux device driver support"
+
+#
+# Hawkeye driver configuration
+#
+config HAWKEYE_BMS
+        default y
+        bool "Enable bug report for Hawkeye" if EXPERT
+        depends on PRINTK
+        help
+           This operation anables monitor log mechanism for ZEUSIS private modules.
+
+config HAWKEYE_PMS
+        default y
+        bool "Enable peformance for Hawkeye" if EXPERT
+        depends on PRINTK
+        help
+           This operation anables monitor log mechanism for ZEUSIS private modules.
+
+config HAWKEYE_EMS
+        default y
+        bool "Enable event for Hawkeye" if EXPERT
+        depends on PRINTK
+        help
+           This operation anables monitor log mechanism for ZEUSIS private modules.
+
+config HAWKEYE_DBG
+        default y
+        bool "Enable debug for Hawkeye" if EXPERT
+        depends on PRINTK
+        help
+           This operation anables monitor log mechanism for ZEUSIS private modules.
+
+config HAWKEYE_HP
+        default n
+        bool "Enable high performace for Hawkeye" if EXPERT
+        depends on PRINTK
+        help
+           This operation anables monitor log mechanism for ZEUSIS private modules.  
+
+endmenu

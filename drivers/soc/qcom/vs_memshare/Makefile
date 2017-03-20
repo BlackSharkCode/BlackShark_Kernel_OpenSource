@@ -1,0 +1,1 @@
+obj-$(CONFIG_VS_MEM_SHARE) := vendor_specific_memory_sharing_v01.o vs_memshare.o

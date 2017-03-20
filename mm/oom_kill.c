@@ -43,8 +43,31 @@
 #include <asm/tlb.h>
 #include "internal.h"
 
+#include <linux/hawkeye/hawkeye_pub.h>
+#include <linux/hawkeye/hawkeye_errno.h>
+
 #define CREATE_TRACE_POINTS
 #include <trace/events/oom.h>
+
+/*hawkeye oom point*/
+#define HAWKEYE_OOM_REPORT(err,fmt,arg...)\
+    ({\
+        int msgid = -1;\
+        if(gfd_bms < 0){\
+            gfd_bms = hawkeye_bms_register_client("oom_killer",NULL);\
+        }\
+        if(gfd_bms > 0){\
+            msgid = hawkeye_bms_msg_start(gfd_bms,err);\
+            if(msgid > 0){\
+                hawkeye_bms_msg_record(msgid,fmt,##arg);\
+                hawkeye_bms_msg_stop(msgid);\
+           }\
+        }else{\
+            prehawkeye_bms_msg_record(err,fmt,##arg);\
+        }\
+    })
+
+static int gfd_bms = -1;//hawkeye bms client fd
 
 int sysctl_panic_on_oom;
 int sysctl_oom_kill_allocating_task;
@@ -406,6 +429,9 @@ static void dump_header(struct oom_control *oc, struct task_struct *p)
 		current->signal->oom_score_adj);
 	if (!IS_ENABLED(CONFIG_COMPACTION) && oc->order)
 		pr_warn("COMPACTION is disabled!!!\n");
+
+	HAWKEYE_OOM_REPORT(BMS_STAB_KERNEL_OOM,"{\"OOM-KILLER\":\"%s\",\"gfp_msk\":\"0x%x\",\"order\":%d,\"oom_score_adj\":\"%hd\"}",
+		current->comm,oc->gfp_mask,oc->order,current->signal->oom_score_adj);
 
 	cpuset_print_current_mems_allowed();
 	dump_stack();

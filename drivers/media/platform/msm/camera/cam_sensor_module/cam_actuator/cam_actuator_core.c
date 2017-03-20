@@ -261,6 +261,13 @@ int32_t cam_actuator_apply_settings(struct cam_actuator_ctrl_t *a_ctrl,
 
 	list_for_each_entry(i2c_list,
 		&(i2c_set->list_head), list) {
+		// shark add delay
+		if(i2c_list->i2c_settings.reg_setting[0].reg_addr == 0x03){
+			if(i2c_list->i2c_settings.reg_setting[0].reg_data <= 200)
+				msleep(10);
+			else
+				msleep(1);	
+			}
 		rc = cam_actuator_i2c_modes_util(
 			&(a_ctrl->io_master_info),
 			i2c_list);
@@ -269,6 +276,11 @@ int32_t cam_actuator_apply_settings(struct cam_actuator_ctrl_t *a_ctrl,
 				"Failed to apply settings: %d",
 				rc);
 			return rc;
+		}
+		//Add initial settings delay, terry.long@blackshark.com, 20180130
+		if(0x02 == i2c_list->i2c_settings.reg_setting[0].reg_addr && 0x00 == i2c_list->i2c_settings.reg_setting[0].reg_data){
+			CAM_ERR(CAM_ACTUATOR, "delay 1ms after write initial [0x02, 0x00]");
+			msleep(1);
 		}
 	}
 

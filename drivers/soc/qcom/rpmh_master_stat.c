@@ -122,6 +122,36 @@ static ssize_t msm_rpmh_master_stats_show(struct kobject *kobj,
 	return length;
 }
 
+void shark_get_rpmh_master_stats(void)
+{
+	int i = 0;
+	unsigned int size = 0;
+	struct msm_rpmh_master_stats *record = NULL;
+
+	/*
+	 * Read SMEM data written by masters
+	 */
+
+	mutex_lock(&rpmh_stats_mutex);
+
+	for (i = 0; i < ARRAY_SIZE(rpmh_masters); i++) {
+		record = (struct msm_rpmh_master_stats *) smem_get_entry(
+					rpmh_masters[i].smem_id, &size,
+					rpmh_masters[i].pid, 0);
+		if (!IS_ERR_OR_NULL(record)) {
+			printk(KERN_CRIT "[%s]\n", rpmh_masters[i].master_name);
+			printk(KERN_CRIT "Version:0x%x\n", record->version_id);
+			printk(KERN_CRIT "Sleep Count:0x%x\n", record->counts);
+			printk(KERN_CRIT "Sleep Last Entered At:0x%llx\n", record->last_entered_at);
+			printk(KERN_CRIT "Sleep Last Exited At:0x%llx\n", record->last_exited_at);
+			printk(KERN_CRIT "Sleep Accumulated Duration:0x%llx\n", record->accumulated_duration);
+		}
+	}
+
+	mutex_unlock(&rpmh_stats_mutex);
+}
+EXPORT_SYMBOL(shark_get_rpmh_master_stats);
+
 static int msm_rpmh_master_stats_probe(struct platform_device *pdev)
 {
 	struct rpmh_master_stats_prv_data *prvdata = NULL;

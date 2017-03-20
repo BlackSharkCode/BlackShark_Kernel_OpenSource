@@ -29,6 +29,7 @@
 #include "smb-lib.h"
 #include "storm-watch.h"
 #include <linux/pmic-voter.h>
+#include <linux/hw_dev_dec.h>
 
 #define SMB138X_DEFAULT_FCC_UA 1000000
 #define SMB138X_DEFAULT_ICL_UA 1500000
@@ -135,14 +136,12 @@ static int smb138x_get_prop_charger_temp(struct smb138x *chip,
 	int rc = 0, avg = 0, i;
 	struct smb_charger *chg = &chip->chg;
 	int die_avg_count;
-
 	if (chg->temp_speed_reading_count < MAX_SPEED_READING_TIMES) {
 		chg->temp_speed_reading_count++;
 		die_avg_count = 1;
 	} else {
 		die_avg_count = TDIE_AVG_COUNT;
 	}
-
 	for (i = 0; i < die_avg_count; i++) {
 		pval.intval = 0;
 		rc = smblib_get_prop_charger_temp(chg, &pval);
@@ -607,6 +606,7 @@ static int smb138x_get_prop_connector_health(struct smb138x *chip)
 	struct smb_charger *chg = &chip->chg;
 	int rc, lb_mdegc, ub_mdegc, rst_mdegc, connector_mdegc;
 
+	return POWER_SUPPLY_HEALTH_GOOD;
 	if (!chg->iio.connector_temp_chan ||
 		PTR_ERR(chg->iio.connector_temp_chan) == -EPROBE_DEFER)
 		chg->iio.connector_temp_chan = iio_channel_get(chg->dev,
@@ -655,6 +655,7 @@ static int smb138x_get_prop_connector_health(struct smb138x *chip)
 
 static enum power_supply_property smb138x_parallel_props[] = {
 	POWER_SUPPLY_PROP_CHARGE_TYPE,
+	POWER_SUPPLY_PROP_ONLINE,
 	POWER_SUPPLY_PROP_CHARGING_ENABLED,
 	POWER_SUPPLY_PROP_PIN_ENABLED,
 	POWER_SUPPLY_PROP_INPUT_SUSPEND,
@@ -670,8 +671,10 @@ static enum power_supply_property smb138x_parallel_props[] = {
 	POWER_SUPPLY_PROP_CONNECTOR_HEALTH,
 	POWER_SUPPLY_PROP_SET_SHIP_MODE,
 	POWER_SUPPLY_PROP_PARALLEL_BATFET_MODE,
+	POWER_SUPPLY_PROP_MIN_ICL,
 };
 
+#define MIN_PARALLEL_ICL_UA		250000
 static int smb138x_parallel_get_prop(struct power_supply *psy,
 				     enum power_supply_property prop,
 				     union power_supply_propval *val)
@@ -682,6 +685,13 @@ static int smb138x_parallel_get_prop(struct power_supply *psy,
 	u8 temp;
 
 	switch (prop) {
+	case POWER_SUPPLY_PROP_ONLINE:
+		rc = smblib_read(chg, POWER_PATH_STATUS_REG,
+				 &temp);
+		if (rc >= 0)
+			val->intval = ((temp & USE_USBIN_BIT)
+					&& (temp & VALID_INPUT_POWER_SOURCE_STS_BIT));
+		break;
 	case POWER_SUPPLY_PROP_CHARGE_TYPE:
 		rc = smblib_get_prop_batt_charge_type(chg, val);
 		break;
@@ -746,6 +756,9 @@ static int smb138x_parallel_get_prop(struct power_supply *psy,
 		break;
 	case POWER_SUPPLY_PROP_PARALLEL_BATFET_MODE:
 		val->intval = chip->dt.pl_batfet_mode;
+		break;
+	case POWER_SUPPLY_PROP_MIN_ICL:
+		val->intval = MIN_PARALLEL_ICL_UA;
 		break;
 	default:
 		pr_err("parallel power supply get prop %d not supported\n",
@@ -1016,6 +1029,13 @@ static int smb138x_init_slave_hw(struct smb138x *chip)
 	rc = smblib_set_charge_param(chg, &chg->param.fcc, 0);
 	if (rc < 0) {
 		pr_err("Couldn't set 0 FCC rc=%d\n", rc);
+		return rc;
+	}
+
+	/* CHG_EN pin functions as a source for enabling charging */
+	rc = smblib_masked_write(chg, BUCK_OPTIONS_CFG_REG, CHG_EN_PIN_SUSPEND_CFG_BIT, 0);
+	if (rc < 0) {
+		pr_err("Couldn't config CHG_EN pin functions as a source, rc=%d\n", rc);
 		return rc;
 	}
 
@@ -1825,6 +1845,10 @@ static int smb138x_probe(struct platform_device *pdev)
 		goto cleanup;
 	}
 
+#ifdef CONFIG_HW_DEV_DCT
+	set_hw_dev_flag(DEV_PERIPHIAL_CHARGER_SLAVE);
+#endif
+
 	pr_info("SMB138X probed successfully mode=%d\n", chip->chg.mode);
 	return rc;
 
@@ -1854,7 +1878,6 @@ static void smb138x_shutdown(struct platform_device *pdev)
 	rc = smblib_masked_write(chg, CMD_OTG_REG, OTG_EN_BIT, 0);
 	if (rc < 0)
 		pr_err("Couldn't disable OTG rc=%d\n", rc);
-
 }
 
 static struct platform_driver smb138x_driver = {

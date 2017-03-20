@@ -1,0 +1,5 @@
+&soc {
+	vs,memshare {
+		compatible = "vs,memshare";
+	};
+};

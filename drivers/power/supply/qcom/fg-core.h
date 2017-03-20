@@ -295,6 +295,7 @@ struct fg_dt_props {
 	int	ki_coeff_low_dischg;
 	int	ki_coeff_hi_chg;
 	int	jeita_thresholds[NUM_JEITA_LEVELS];
+	int	aging_jeita_thresholds[NUM_JEITA_LEVELS];
 	int	ki_coeff_soc[KI_COEFF_SOC_LEVELS];
 	int	ki_coeff_med_dischg[KI_COEFF_SOC_LEVELS];
 	int	ki_coeff_hi_dischg[KI_COEFF_SOC_LEVELS];
@@ -437,6 +438,7 @@ struct fg_chip {
 	int			prev_charge_status;
 	int			charge_done;
 	int			charge_type;
+	int			aging_running;
 	int			online_status;
 	int			last_soc;
 	int			last_batt_temp;
@@ -469,6 +471,7 @@ struct fg_chip {
 	struct delayed_work	ttf_work;
 	struct delayed_work	sram_dump_work;
 	struct delayed_work	pl_enable_work;
+	struct delayed_work	aging_jeita_set_work;
 };
 
 /* Debugfs data structures are below */

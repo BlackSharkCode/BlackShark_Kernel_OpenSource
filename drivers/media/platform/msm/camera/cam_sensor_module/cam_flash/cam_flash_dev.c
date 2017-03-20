@@ -36,6 +36,7 @@ static int32_t cam_flash_driver_cmd(struct cam_flash_ctrl *fctrl,
 	}
 
 	mutex_lock(&(fctrl->flash_mutex));
+	
 	switch (cmd->op_code) {
 	case CAM_ACQUIRE_DEV: {
 		struct cam_sensor_acquire_dev flash_acq_dev;

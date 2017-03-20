@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -24,6 +24,7 @@
 #include <linux/platform_device.h>
 #include <linux/slab.h>
 #include <linux/spmi.h>
+#include <linux/syscore_ops.h>
 
 /* PMIC Arbiter configuration registers */
 #define PMIC_ARB_VERSION		0x0000
@@ -178,6 +179,9 @@ struct spmi_pmic_arb {
 	struct apid_data	apid_data[PMIC_ARB_MAX_PERIPHS];
 	bool			ahb_bus_wa;
 };
+extern int msm_show_resume_irq_mask;
+bool show_log = false;
+struct spmi_pmic_arb *pa_temp;
 
 /**
  * pmic_arb_ver: version dependent functionality.
@@ -548,13 +552,16 @@ static void cleanup_irq(struct spmi_pmic_arb *pa, u16 apid, int id)
 	writel_relaxed(irq_mask, pa->intr + pa->ver_ops->irq_clear(apid));
 }
 
-static void periph_interrupt(struct spmi_pmic_arb *pa, u16 apid)
+static void periph_interrupt(struct spmi_pmic_arb *pa, u16 apid, bool show)
 {
 	unsigned int irq;
 	u32 status;
 	int id;
 	u8 sid = (pa->apid_data[apid].ppid >> 8) & 0xF;
 	u8 per = pa->apid_data[apid].ppid & 0xFF;
+	struct irq_desc *desc = NULL;
+	const char *name = "null";
+	//bool show = true;
 
 	status = readl_relaxed(pa->intr + pa->ver_ops->irq_status(apid));
 	while (status) {
@@ -565,7 +572,17 @@ static void periph_interrupt(struct spmi_pmic_arb *pa, u16 apid)
 			cleanup_irq(pa, apid, id);
 			continue;
 		}
-		generic_handle_irq(irq);
+		if(show) {
+			desc = irq_to_desc(irq);
+			if (desc == NULL)
+				name = "stray irq";
+			else if (desc->action && desc->action->name)
+				name = desc->action->name;
+			pr_err("%d triggered [0x%01x, 0x%02x,0x%01x] %s\n",
+				irq, sid, per, id, name);
+		}
+		else
+			generic_handle_irq(irq);
 	}
 }
 
@@ -601,7 +618,7 @@ static void pmic_arb_chained_irq(struct irq_desc *desc)
 			enable = readl_relaxed(pa->intr +
 					pa->ver_ops->acc_enable(apid));
 			if (enable & SPMI_PIC_ACC_ENABLE_BIT)
-				periph_interrupt(pa, apid);
+				periph_interrupt(pa, apid, show_log);
 		}
 	}
 
@@ -621,14 +638,28 @@ static void pmic_arb_chained_irq(struct irq_desc *desc)
 					dev_dbg(&pa->spmic->dev,
 						"Dispatching IRQ for apid=%d status=%x\n",
 						i, irq_status);
-					periph_interrupt(pa, i);
+					periph_interrupt(pa, i, show_log);
 				}
 			}
 		}
 	}
-
+	show_log = false;
 	chained_irq_exit(chip, desc);
 }
+
+static void spmi_pmic_arb_resume(void)
+{
+	struct irq_desc *desc;
+        if (msm_show_resume_irq_mask) {
+		show_log = true;
+		desc = irq_to_desc(pa_temp->irq);
+		pmic_arb_chained_irq(desc);
+	}
+}
+
+static struct syscore_ops spmi_pmic_arb_syscore_ops = {
+        .resume = spmi_pmic_arb_resume,
+};
 
 static void qpnpint_irq_ack(struct irq_data *d)
 {
@@ -726,24 +757,6 @@ static int qpnpint_get_irqchip_state(struct irq_data *d,
 	return 0;
 }
 
-static int qpnpint_irq_request_resources(struct irq_data *d)
-{
-	struct spmi_pmic_arb *pmic_arb = irq_data_get_irq_chip_data(d);
-	u16 periph = HWIRQ_PER(d->hwirq);
-	u16 apid = HWIRQ_APID(d->hwirq);
-	u16 sid = HWIRQ_SID(d->hwirq);
-	u16 irq = HWIRQ_IRQ(d->hwirq);
-
-	if (pmic_arb->apid_data[apid].irq_owner != pmic_arb->ee) {
-		dev_err(&pmic_arb->spmic->dev, "failed to xlate sid = %#x, periph = %#x, irq = %u: ee=%u but owner=%u\n",
-			sid, periph, irq, pmic_arb->ee,
-			pmic_arb->apid_data[apid].irq_owner);
-		return -ENODEV;
-	}
-
-	return 0;
-}
-
 static struct irq_chip pmic_arb_irqchip = {
 	.name		= "pmic_arb",
 	.irq_ack	= qpnpint_irq_ack,
@@ -751,7 +764,6 @@ static struct irq_chip pmic_arb_irqchip = {
 	.irq_unmask	= qpnpint_irq_unmask,
 	.irq_set_type	= qpnpint_irq_set_type,
 	.irq_get_irqchip_state	= qpnpint_get_irqchip_state,
-	.irq_request_resources = qpnpint_irq_request_resources,
 	.flags		= IRQCHIP_MASK_ON_SUSPEND
 			| IRQCHIP_SKIP_SET_WAKE,
 };
@@ -796,6 +808,13 @@ static int qpnpint_irq_domain_dt_translate(struct irq_domain *d,
 		"failed to xlate sid = 0x%x, periph = 0x%x, irq = %u rc = %d\n",
 		intspec[0], intspec[1], intspec[2], rc);
 		return rc;
+	}
+
+	if (pa->apid_data[apid].irq_owner != pa->ee) {
+		dev_err(&pa->spmic->dev, "failed to xlate sid = 0x%x, periph = 0x%x, irq = %u: ee=%u but owner=%u\n",
+			intspec[0], intspec[1], intspec[2], pa->ee,
+			pa->apid_data[apid].irq_owner);
+		return -ENODEV;
 	}
 
 	/* Keep track of {max,min}_apid for bounding search during interrupt */
@@ -1416,7 +1435,8 @@ static int spmi_pmic_arb_probe(struct platform_device *pdev)
 	err = spmi_controller_add(ctrl);
 	if (err)
 		goto err_domain_remove;
-
+	pa_temp = pa;
+	register_syscore_ops(&spmi_pmic_arb_syscore_ops);
 	return 0;
 
 err_domain_remove:

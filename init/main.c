@@ -154,6 +154,25 @@ static int __init set_reset_devices(char *str)
 
 __setup("reset_devices", set_reset_devices);
 
+static unsigned int zs_debug_config=0;
+
+/*To analyse which operation should be done*/
+static int __init do_debug_config(char *str)
+{
+	if (get_option(&str, &zs_debug_config))
+		return 1;
+	else
+		return -EINVAL;
+}
+
+__setup("debug.config=", do_debug_config);
+
+unsigned int get_debug_config(void)
+{
+	return zs_debug_config;
+}
+EXPORT_SYMBOL(get_debug_config);
+
 static const char *argv_init[MAX_INIT_ARGS+2] = { "init", NULL, };
 const char *envp_init[MAX_INIT_ENVS+2] = { "HOME=/", "TERM=linux", NULL, };
 static const char *panic_later, *panic_param;

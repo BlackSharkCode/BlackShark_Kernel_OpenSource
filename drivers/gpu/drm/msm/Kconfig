@@ -69,6 +69,12 @@ config DRM_MSM_DSI_STAGING
 	  Interface and DSI stands for Display Serial Interface which powers
 	  the primary display of your mobile device.
 
+config IRIS2P_FULL_SUPPORT
+	bool "Enable IRIS2P Support"
+	default y
+	---help---
+	Say y to enable
+
 config DRM_MSM_DSI_PLL
 	bool "Enable DSI PLL driver in MSM DRM"
 	depends on DRM_MSM_DSI && COMMON_CLK

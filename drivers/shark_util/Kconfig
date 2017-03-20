@@ -1,0 +1,4 @@
+config SHARK_POWER_DEBUG
+        bool "Enable SHARK POWER DEBUG"
+        ---help---
+          Allows to enable power debug feature

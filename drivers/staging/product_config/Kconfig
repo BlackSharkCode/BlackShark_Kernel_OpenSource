@@ -1,0 +1,15 @@
+menuconfig PRODUCT_CFG
+	bool "Enable Product Config feature"
+	default n
+	help
+	  PRODUCT_CFG only enabled by config_config.sh to indicate that
+	  product specific kernel configs have been enabled.
+
+if PRODUCT_CFG
+config BS_DEBUG
+	bool "Blackshark debug feature"
+	help
+	  CONFIG_BS_DEBUG will be enabled in eng version, but disabled in user version.
+	  You can use CONFIG_BS_DEBUG to print more debug message without impact
+	  release version.
+endif

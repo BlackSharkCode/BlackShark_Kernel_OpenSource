@@ -65,6 +65,8 @@ struct msm_rpmstats_kobj_attr {
 	struct msm_rpmstats_platform_data *pd;
 };
 
+struct msm_rpmstats_platform_data *rpm_dump;
+
 static inline u64 get_time_in_sec(u64 counter)
 {
 	do_div(counter, MSM_ARCH_TIMER_FREQ);
@@ -170,6 +172,29 @@ static inline int msm_rpmstats_copy_stats(
 	return length;
 }
 
+void shark_get_rpmstats(void)
+{
+	struct msm_rpmstats_private_data prvdata;
+	struct msm_rpmstats_platform_data *pdata = rpm_dump;
+
+	prvdata.reg_base = ioremap_nocache(pdata->phys_addr_base,
+						pdata->phys_size);
+	if (!prvdata.reg_base) {
+		pr_err("%s: ERROR could not ioremap start=%pa, len=%u\n",
+			__func__, &pdata->phys_addr_base, pdata->phys_size);
+		return;
+	}
+
+	prvdata.read_idx = prvdata.len = 0;
+	prvdata.platform_data = pdata;
+	prvdata.num_records = RPM_STATS_NUM_REC;
+
+	if (prvdata.read_idx < prvdata.num_records)
+		prvdata.len = msm_rpmstats_copy_stats(&prvdata);
+	printk(KERN_CRIT "%s\n", prvdata.buf);
+}
+EXPORT_SYMBOL(shark_get_rpmstats);
+
 static ssize_t rpmstats_show(struct kobject *kobj,
 			struct kobj_attribute *attr, char *buf)
 {
@@ -267,6 +292,7 @@ static int msm_rpmstats_probe(struct platform_device *pdev)
 	if (pdev->dev.platform_data)
 		pd = pdev->dev.platform_data;
 
+	rpm_dump = pdata;
 	msm_rpmstats_create_sysfs(pdata);
 
 	return 0;

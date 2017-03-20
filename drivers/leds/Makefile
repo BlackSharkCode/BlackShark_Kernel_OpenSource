@@ -76,7 +76,8 @@ obj-$(CONFIG_LEDS_QPNP_FLASH)		+= leds-qpnp-flash.o
 obj-$(CONFIG_LEDS_QPNP_FLASH_V2)	+= leds-qpnp-flash-v2.o
 obj-$(CONFIG_LEDS_QPNP_WLED)		+= leds-qpnp-wled.o
 obj-$(CONFIG_LEDS_QPNP_HAPTICS)	+= leds-qpnp-haptics.o
-
+obj-$(CONFIG_AW9120_LED)                +=led-aw9120.o
+obj-$(CONFIG_LEDS_AW2015) 				+= leds-aw2015.o
 # LED SPI Drivers
 obj-$(CONFIG_LEDS_DAC124S085)		+= leds-dac124s085.o
 

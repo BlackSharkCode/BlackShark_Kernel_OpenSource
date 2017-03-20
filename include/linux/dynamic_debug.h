@@ -182,4 +182,6 @@ static inline int ddebug_dyndbg_module_param_cb(char *param, char *val,
 	do { if (0) dev_printk(KERN_DEBUG, dev, fmt, ##__VA_ARGS__); } while (0)
 #endif
 
+extern unsigned int get_debug_config(void);
+
 #endif

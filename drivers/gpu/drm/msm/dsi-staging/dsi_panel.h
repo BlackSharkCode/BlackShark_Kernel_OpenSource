@@ -140,6 +140,14 @@ struct drm_panel_esd_config {
 	u32 groups;
 };
 
+#if defined(CONFIG_IRIS2P_FULL_SUPPORT)
+struct dsp_config{
+	int dsp_reset_gpio;
+	int dsp_1v1;
+	struct clk *div_clk3;
+};
+#endif
+
 struct dsi_panel {
 	const char *name;
 	struct device_node *panel_of_node;
@@ -180,6 +188,11 @@ struct dsi_panel {
 	enum dsi_dms_mode dms_mode;
 
 	bool sync_broadcast_en;
+
+#if defined(CONFIG_IRIS2P_FULL_SUPPORT)
+       struct dsp_config dsp_cfg;
+#endif
+
 };
 
 static inline bool dsi_panel_ulps_feature_enabled(struct dsi_panel *panel)
@@ -273,5 +286,12 @@ void dsi_dsc_pclk_param_calc(struct msm_display_dsc_info *dsc, int intf_width);
 
 int dsi_panel_parse_esd_reg_read_configs(struct dsi_panel *panel,
 				struct device_node *of_node);
+
+#if defined(CONFIG_IRIS2P_FULL_SUPPORT)
+int dsi_dsp_pt_power(struct dsi_panel *panel, bool enable);
+int iris_work_enable(bool enable);
+int iris_clk_on(struct dsi_panel *panel);
+
+#endif
 
 #endif /* _DSI_PANEL_H_ */

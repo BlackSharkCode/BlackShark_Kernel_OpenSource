@@ -1,0 +1,16 @@
+# Product configs that only apply for non-user build go here
+
+CONFIG_BS_DEBUG=y
+
+# For Pstore feature
+CONFIG_PSTORE=y
+CONFIG_PSTORE_CONSOLE=y
+CONFIG_PSTORE_RAM=y
+CONFIG_PSTORE_FTRACE=y
+CONFIG_DEBUG_FS=y
+CONFIG_FUNCTION_TRACER=y
+CONFIG_AW9120_LED=y
+CONFIG_LEDS_AW2015=y
+# For Read Register
+CONFIG_DEVMEM=y
+CONFIG_DEVKMEM=y

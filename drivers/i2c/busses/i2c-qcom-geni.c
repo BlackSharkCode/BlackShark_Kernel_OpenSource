@@ -567,7 +567,7 @@ static int geni_i2c_gsi_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[],
 		tx_cookie = dmaengine_submit(gi2c->tx_desc);
 		dma_async_issue_pending(gi2c->tx_c);
 
-		timeout = wait_for_completion_timeout(&gi2c->xfer, HZ);
+		timeout = wait_for_completion_timeout(&gi2c->xfer, 6*HZ);
 		if (msgs[i].flags & I2C_M_RD)
 			geni_se_iommu_unmap_buf(rx_dev, &gi2c->rx_ph,
 				msgs[i].len, DMA_FROM_DEVICE);

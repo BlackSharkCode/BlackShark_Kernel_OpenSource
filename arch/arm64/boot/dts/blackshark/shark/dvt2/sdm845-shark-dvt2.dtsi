@@ -1,0 +1,42 @@
+/*
+ * Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+#include "../dvt/sdm845-shark-dvt.dtsi"
+#include "sdm845-pinctrl-shark-dvt2.dtsi"
+
+
+&qupv3_se3_i2c {
+	iris2p@22 {
+		compatible = "null";
+	};
+
+};
+
+&qupv3_se5_i2c {
+	novatek@62 {
+			novatek,button-keys = <0x244 158>;
+	};
+};
+
+
+&qupv3_se14_i2c {
+	status = "ok";	
+        iris2p@22 {
+                compatible = "pxlw,iris2p_i2c";
+                reg = <0x22>;
+        };
+};
+
+&pmi8998_charger {
+	shark,board-is-dvt2 = <1>;
+};

@@ -32,6 +32,9 @@
 #include <linux/regulator/of_regulator.h>
 #include <linux/input/qpnp-power-on.h>
 #include <linux/power_supply.h>
+#include <linux/hawkeye/hawkeye_pub.h>
+#include <linux/hawkeye/hawkeye_errno.h>
+#include <asm/bootinfo.h>
 
 #define PMIC_VER_8941           0x01
 #define PMIC_VERSION_REG        0x0105
@@ -66,6 +69,7 @@
 	((pon)->base + PON_OFFSET((pon)->subtype, 0xA, 0xC2))
 #define QPNP_POFF_REASON1(pon) \
 	((pon)->base + PON_OFFSET((pon)->subtype, 0xC, 0xC5))
+#define QPNP_POFF_REASON2(pon)			((pon)->base + 0xD)
 #define QPNP_PON_WARM_RESET_REASON2(pon)	((pon)->base + 0xB)
 #define QPNP_PON_OFF_REASON(pon)		((pon)->base + 0xC7)
 #define QPNP_FAULT_REASON1(pon)			((pon)->base + 0xC8)
@@ -154,6 +158,24 @@
 #define QPNP_PON_BUFFER_SIZE			9
 
 #define QPNP_POFF_REASON_UVLO			13
+
+/*hawkeye qpnp point*/
+#define HAWKEYE_QPNP_REPORT(err,fmt,arg...)\
+    ({\
+        int msgid = -1;\
+        if(gfd_bms < 0){\
+            gfd_bms = hawkeye_bms_register_client("qpnp_pon",NULL);\
+        }\
+        if(gfd_bms > 0){\
+            msgid = hawkeye_bms_msg_start(gfd_bms,err);\
+            if(msgid > 0){\
+                hawkeye_bms_msg_record(msgid,fmt,##arg);\
+                hawkeye_bms_msg_stop(msgid);\
+           }\
+        }else{\
+            prehawkeye_bms_msg_record(err,fmt,##arg);\
+        }\
+    })
 
 enum qpnp_pon_version {
 	QPNP_PON_GEN1_V1,
@@ -298,6 +320,7 @@ static const char * const qpnp_poff_reason[] = {
 	[39] = "Triggered from S3_RESET_KPDPWR_ANDOR_RESIN (power key and/or reset line)",
 };
 
+static int gfd_bms = -1;//hawkeye bms client fd
 static int
 qpnp_pon_masked_write(struct qpnp_pon *pon, u16 addr, u8 mask, u8 val)
 {
@@ -631,6 +654,74 @@ int qpnp_pon_is_warm_reset(void)
 }
 EXPORT_SYMBOL(qpnp_pon_is_warm_reset);
 
+int qpnp_pon_is_ps_hold_reset(void)
+{
+	struct qpnp_pon *pon = sys_reset_dev;
+	int rc;
+	int reg = 0;
+
+	if (!pon)
+		return 0;
+
+	rc = regmap_read(pon->regmap, QPNP_POFF_REASON1(pon), &reg);
+	if (rc) {
+		dev_err(&pon->pdev->dev,
+				"Unable to read addr=%x, rc(%d)\n",
+				QPNP_POFF_REASON1(pon), rc);
+		return 0;
+	}
+
+	/* The bit 1 is 1, means by PS_HOLD/MSM controlled shutdown */
+	if (reg & 0x2)
+		return 1;
+
+	dev_info(&pon->pdev->dev,
+			"hw_reset reason1 is 0x%x\n",
+			reg);
+
+	rc = regmap_read(pon->regmap, QPNP_POFF_REASON2(pon), &reg);
+
+	dev_info(&pon->pdev->dev,
+			"hw_reset reason2 is 0x%x\n",
+			reg);
+	return 0;
+}
+EXPORT_SYMBOL(qpnp_pon_is_ps_hold_reset);
+
+int qpnp_pon_is_lpk(void)
+{
+	struct qpnp_pon *pon = sys_reset_dev;
+	int rc;
+	int reg = 0;
+
+	if (!pon)
+		return 0;
+
+	rc = regmap_read(pon->regmap, QPNP_POFF_REASON1(pon), &reg);
+	if (rc) {
+		dev_err(&pon->pdev->dev,
+				"Unable to read addr=%x, rc(%d)\n",
+				QPNP_POFF_REASON1(pon), rc);
+		return 0;
+	}
+
+	/* The bit 7 is 1, means the off reason is powerkey */
+	if (reg & 0x80)
+		return 1;
+
+	dev_info(&pon->pdev->dev,
+			"hw_reset reason1 is 0x%x\n",
+			reg);
+
+	rc = regmap_read(pon->regmap, QPNP_POFF_REASON2(pon), &reg);
+
+	dev_info(&pon->pdev->dev,
+			"hw_reset reason2 is 0x%x\n",
+			reg);
+	return 0;
+}
+EXPORT_SYMBOL(qpnp_pon_is_lpk);
+
 /**
  * qpnp_pon_wd_config - Disable the wd in a warm reset.
  * @enable: to enable or disable the PON watch dog
@@ -860,10 +951,20 @@ qpnp_pon_input_dispatch(struct qpnp_pon *pon, u32 pon_type)
 	if (!cfg->old_state && !key_status) {
 		input_report_key(pon->pon_input, cfg->key_code, 1);
 		input_sync(pon->pon_input);
+		pr_err("PMIC input: code[%d]=%s, sts[%d]=[%s]\n",
+			cfg->key_code,
+			cfg->key_code == KEY_POWER ? "PWKEY":"VOLDWN" ,
+			key_status,
+			key_status ? "DWN":"UP");
 	}
 
 	input_report_key(pon->pon_input, cfg->key_code, key_status);
 	input_sync(pon->pon_input);
+	pr_err("PMIC input: code[%d]=%s, sts[%d]=[%s]\n",
+		cfg->key_code,
+		cfg->key_code == KEY_POWER ? "PWKEY":"VOLDWN",
+		key_status,
+		key_status ? "DWN":"UP");
 
 	cfg->old_state = !!key_status;
 
@@ -882,8 +983,12 @@ static irqreturn_t qpnp_kpdpwr_irq(int irq, void *_pon)
 	return IRQ_HANDLED;
 }
 
+extern void bs_set_dload_mode(int on);
 static irqreturn_t qpnp_kpdpwr_bark_irq(int irq, void *_pon)
 {
+	struct qpnp_pon *pon = _pon;
+	dev_emerg(&pon->pdev->dev, "qpnp_kpdpwr_bark_irq!\n");
+	bs_set_dload_mode(0);
 	return IRQ_HANDLED;
 }
 
@@ -900,6 +1005,8 @@ static irqreturn_t qpnp_resin_irq(int irq, void *_pon)
 
 static irqreturn_t qpnp_kpdpwr_resin_bark_irq(int irq, void *_pon)
 {
+	struct qpnp_pon *pon = _pon;
+	dev_emerg(&pon->pdev->dev, "qpnp_kpdpwr_resin_bark_irq!\n");
 	return IRQ_HANDLED;
 }
 
@@ -2133,6 +2240,9 @@ static int qpnp_pon_probe(struct platform_device *pdev)
 			"PMIC@SID%d Power-on reason: Unknown and '%s' boot\n",
 			to_spmi_device(pon->pdev->dev.parent)->usid,
 			 cold_boot ? "cold" : "warm");
+
+		HAWKEYE_QPNP_REPORT(BMS_STAB_KERNEL_PON_INFO,
+			"{\"PMIC\":%d,\"PWRON\":\"Unknown\",\"BOOT\":\"%s\"}",to_spmi_device(pon->pdev->dev.parent)->usid,(cold_boot ? "cold" : "warm"));
 	} else {
 		pon->pon_trigger_reason = index;
 		dev_info(&pon->pdev->dev,
@@ -2140,6 +2250,9 @@ static int qpnp_pon_probe(struct platform_device *pdev)
 			to_spmi_device(pon->pdev->dev.parent)->usid,
 			 qpnp_pon_reason[index],
 			cold_boot ? "cold" : "warm");
+
+		HAWKEYE_QPNP_REPORT((index==7 ? BMS_STAB_KERNEL_LONG_PWR_KEY_RESET : BMS_STAB_KERNEL_PON_INFO),
+			"{\"PMIC\":%d,\"PWRON\":\"%s\",\"BOOT\":\"%s\"}",to_spmi_device(pon->pdev->dev.parent)->usid,qpnp_pon_reason[index],(cold_boot ? "cold" : "warm"));
 	}
 
 	/* POFF reason */
@@ -2163,12 +2276,20 @@ static int qpnp_pon_probe(struct platform_device *pdev)
 		dev_info(&pon->pdev->dev,
 				"PMIC@SID%d: Unknown power-off reason\n",
 				to_spmi_device(pon->pdev->dev.parent)->usid);
+
+		HAWKEYE_QPNP_REPORT(BMS_STAB_KERNEL_PON_INFO,
+				"{\"PMIC\":%d,\"PWROFF\":\"Unknown\"}",to_spmi_device(pon->pdev->dev.parent)->usid);	
 	} else {
 		pon->pon_power_off_reason = index;
 		dev_info(&pon->pdev->dev,
 				"PMIC@SID%d: Power-off reason: %s\n",
 				to_spmi_device(pon->pdev->dev.parent)->usid,
 				qpnp_poff_reason[index]);
+#ifdef CONFIG_BOOT_INFO
+		set_poweroff_reason(index);
+#endif
+		HAWKEYE_QPNP_REPORT((index==7 ? BMS_STAB_KERNEL_LONG_PWR_KEY_RESET : BMS_STAB_KERNEL_PON_INFO),
+			"{\"PMIC\":%d,\"PWROFF\":\"%s\"}",to_spmi_device(pon->pdev->dev.parent)->usid,qpnp_poff_reason[index]);
 	}
 
 	if (pon->pon_trigger_reason == PON_SMPL ||
@@ -2399,12 +2520,14 @@ static struct platform_driver qpnp_pon_driver = {
 
 static int __init qpnp_pon_init(void)
 {
+	gfd_bms = hawkeye_bms_register_client("qpnp_pon",NULL);
 	return platform_driver_register(&qpnp_pon_driver);
 }
 subsys_initcall(qpnp_pon_init);
 
 static void __exit qpnp_pon_exit(void)
 {
+	hawkeye_bms_unregister_client(gfd_bms);
 	return platform_driver_unregister(&qpnp_pon_driver);
 }
 module_exit(qpnp_pon_exit);

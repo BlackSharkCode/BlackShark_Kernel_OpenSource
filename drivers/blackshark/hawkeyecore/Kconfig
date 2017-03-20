@@ -1,0 +1,13 @@
+menu "zeusis linux device driver support"
+
+#
+# Hawkeye driver configuration
+#
+config HAWKEYE_CORE
+        default y
+        bool "Enable bug report for Hawkeye" if EXPERT
+        depends on PRINTK
+        help
+           This operation anables monitor log mechanism for ZEUSIS private modules. 
+
+endmenu

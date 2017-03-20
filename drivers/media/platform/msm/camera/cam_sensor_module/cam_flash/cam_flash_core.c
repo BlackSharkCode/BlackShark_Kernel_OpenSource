@@ -131,6 +131,8 @@ static int cam_flash_ops(struct cam_flash_ctrl *flash_ctrl,
 	uint32_t curr = 0, max_current = 0;
 	struct cam_flash_private_soc *soc_private = NULL;
 	int i = 0;
+	//Fix torch current, terry.long@blackshark.com, 20180201.
+	uint32_t curr_fix = 200;
 
 	if (!flash_ctrl || !flash_data) {
 		CAM_ERR(CAM_FLASH, "Fctrl or Data NULL");
@@ -150,6 +152,35 @@ static int cam_flash_ops(struct cam_flash_ctrl *flash_ctrl,
 					curr = flash_data->led_current_ma[i];
 				else
 					curr = soc_private->torch_op_current[i];
+					
+				//Fix torch current, terry.long@blackshark.com, 20180201.
+				if(!strncmp(soc_private->torch_trigger_name[i], "torch0_trigger", strlen("torch0_trigger"))){
+					curr_fix = 50;
+
+					//widget should not open torch_0
+					if(flash_ctrl->nrt_info.cmn_attr.cmd_type == CAMERA_SENSOR_FLASH_CMD_TYPE_WIDGET){
+						curr_fix = 0;
+					}
+				}else if(!strncmp(soc_private->torch_trigger_name[i], "torch1_trigger", strlen("torch1_trigger"))){
+					curr_fix = 250;
+						
+					//widget should open torch_1
+					if(flash_ctrl->nrt_info.cmn_attr.cmd_type == CAMERA_SENSOR_FLASH_CMD_TYPE_WIDGET){
+						curr_fix = 200;
+					}
+				}else if(!strncmp(soc_private->torch_trigger_name[i], "torch2_trigger", strlen("torch2_trigger"))){
+					curr_fix = 150;
+				}
+					
+				CAM_ERR(CAM_FLASH, "[torch] name:%s, Led_Current[%d] = %d, modify to %d. soc(%d-%d)", 
+					soc_private->torch_trigger_name[i], 
+					i, 
+					curr, 
+					curr_fix, 
+					soc_private->torch_max_current[i], 
+					soc_private->torch_op_current[i]);
+						
+				curr = curr_fix;
 
 				CAM_DBG(CAM_FLASH,
 					"Led_Current[%d] = %d", i, curr);
@@ -168,6 +199,25 @@ static int cam_flash_ops(struct cam_flash_ctrl *flash_ctrl,
 					curr = flash_data->led_current_ma[i];
 				else
 					curr = soc_private->flash_op_current[i];
+					
+				//Fix flash current, terry.long@blackshark.com, 20180201.
+				if(!strncmp(soc_private->flash_trigger_name[i], "flash0_trigger", strlen("flash0_trigger"))){
+					curr_fix = 250;
+				}else if(!strncmp(soc_private->flash_trigger_name[i], "flash1_trigger", strlen("flash1_trigger"))){
+					curr_fix = 1250;
+				}else if(!strncmp(soc_private->flash_trigger_name[i], "flash2_trigger", strlen("flash2_trigger"))){
+					curr_fix = 300;
+				}
+					
+				CAM_ERR(CAM_FLASH, "[flash] name:%s, Led_Current[%d] = %d, modify to %d. soc(%d-%d)", 
+					soc_private->flash_trigger_name[i], 
+					i, 
+					curr, 
+					curr_fix, 
+					soc_private->flash_max_current[i], 
+					soc_private->flash_op_current[i]);
+						
+				curr = curr_fix;
 
 				CAM_DBG(CAM_FLASH, "LED flash_current[%d]: %d",
 					i, curr);

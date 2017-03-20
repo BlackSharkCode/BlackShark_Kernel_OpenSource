@@ -790,7 +790,7 @@ static int osm_cpufreq_cpu_init(struct cpufreq_policy *policy)
 			struct cpufreq_frequency_table *prev = &table[i - 1];
 
 			if (prev->frequency == CPUFREQ_ENTRY_INVALID) {
-				prev->flags = CPUFREQ_BOOST_FREQ;
+				//prev->flags = CPUFREQ_BOOST_FREQ;
 				prev->frequency = prev->driver_data;
 			}
 
@@ -837,7 +837,7 @@ static struct cpufreq_driver qcom_osm_cpufreq_driver = {
 	.exit		= osm_cpufreq_cpu_exit,
 	.name		= "osm-cpufreq",
 	.attr		= osm_cpufreq_attr,
-	.boost_enabled	= true,
+	.boost_enabled	= false,
 };
 
 static u32 find_voltage(struct clk_osm *c, unsigned long rate)

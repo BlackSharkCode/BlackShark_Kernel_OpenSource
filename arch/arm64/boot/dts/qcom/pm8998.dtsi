@@ -31,9 +31,10 @@
 			reg = <0x800 0x100>;
 			interrupts = <0x0 0x8 0x0 IRQ_TYPE_NONE>,
 				     <0x0 0x8 0x1 IRQ_TYPE_NONE>,
+				     <0x0 0x8 0x3 IRQ_TYPE_NONE>,
 				     <0x0 0x8 0x4 IRQ_TYPE_NONE>,
 				     <0x0 0x8 0x5 IRQ_TYPE_NONE>;
-			interrupt-names = "kpdpwr", "resin",
+			interrupt-names = "kpdpwr", "resin", "kpdpwr-bark",
 					"resin-bark", "kpdpwr-resin-bark";
 			qcom,pon-dbc-delay = <15625>;
 			qcom,kpdpwr-sw-debounce;
@@ -44,6 +45,11 @@
 				qcom,pon-type = <0>;
 				qcom,pull-up = <1>;
 				linux,code = <116>;
+				qcom,support-reset = <1>;
+				qcom,s1-timer = <6720>;
+				qcom,s2-timer = <2000>;
+				qcom,s2-type = <PON_POWER_OFF_HARD_RESET>;
+				qcom,use-bark;
 			};
 
 			qcom,pon_2 {
@@ -56,9 +62,9 @@
 				qcom,pon-type = <3>;
 				qcom,support-reset = <1>;
 				qcom,pull-up = <1>;
-				qcom,s1-timer = <6720>;
-				qcom,s2-timer = <2000>;
-				qcom,s2-type = <PON_POWER_OFF_DVDD_HARD_RESET>;
+				qcom,s1-timer = <4480>;
+				qcom,s2-timer = <1000>;
+				qcom,s2-type = <PON_POWER_OFF_DVDD_SHUTDOWN>;
 				qcom,use-bark;
 			};
 		};
@@ -119,8 +125,8 @@
 			compatible = "qcom,qpnp-rtc";
 			#address-cells = <1>;
 			#size-cells = <1>;
-			qcom,qpnp-rtc-write = <0>;
-			qcom,qpnp-rtc-alarm-pwrup = <0>;
+			qcom,qpnp-rtc-write = <1>;
+			qcom,qpnp-rtc-alarm-pwrup = <1>;
 
 			qcom,pm8998_rtc_rw@6000 {
 				reg = <0x6000 0x100>;

@@ -1,0 +1,3 @@
+# Product configs that only apply for non-user build go here
+
+CONFIG_BS_DEBUG=y

@@ -1,0 +1,6 @@
+# Normal product specific configs go here
+# Notes:
+#  1. Try to use DTS file instead of adding product configs here.
+#  2. If DTS file really cannot be used to represent differences between products, add
+#     kernel configs here, but explain the reason first and add others to review.
+

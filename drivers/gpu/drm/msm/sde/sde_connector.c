@@ -73,9 +73,10 @@ static int sde_backlight_device_update_status(struct backlight_device *bd)
 
 	if ((bd->props.power != FB_BLANK_UNBLANK) ||
 			(bd->props.state & BL_CORE_FBBLANK) ||
-			(bd->props.state & BL_CORE_SUSPENDED))
-		brightness = 0;
-
+			(bd->props.state & BL_CORE_SUSPENDED)) {
+                        pr_err("%s err, power %d, state %d, brightness %d\n", __FUNCTION__, bd->props.power, bd->props.state, brightness);
+                        brightness = 0;
+    }
 	c_conn = bl_get_data(bd);
 	display = (struct dsi_display *) c_conn->display;
 	if (brightness > display->panel->bl_config.bl_max_level)
@@ -429,6 +430,11 @@ void sde_connector_schedule_status_work(struct drm_connector *connector,
 			/* Cancel any pending ESD status check */
 			cancel_delayed_work_sync(&c_conn->status_work);
 			c_conn->esd_status_check = false;
+#if defined(CONFIG_IRIS2P_FULL_SUPPORT)
+			if (c_conn->ops.cancel_esd_thread) {
+				c_conn->ops.cancel_esd_thread(c_conn->display);
+			}
+#endif
 		}
 	}
 }

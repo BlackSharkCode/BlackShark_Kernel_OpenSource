@@ -29,7 +29,9 @@
 #include <linux/slab.h>
 #include <linux/tty.h>
 #include <linux/tty_flip.h>
+#include <linux/dynamic_debug.h>
 
+#define CONSOLE_OPERATION 0x1
 /* UART specific GENI registers */
 #define SE_UART_LOOPBACK_CFG		(0x22C)
 #define SE_UART_TX_TRANS_CFG		(0x25C)
@@ -609,7 +611,6 @@ static void msm_geni_serial_abort_rx(struct uart_port *uport)
 	msm_geni_serial_poll_bit(uport, SE_GENI_S_CMD_CTRL_REG,
 					S_GENI_CMD_ABORT, false);
 	geni_write_reg_nolog(irq_clear, uport->membase, SE_GENI_S_IRQ_CLEAR);
-	geni_write_reg(FORCE_DEFAULT, uport->membase, GENI_FORCE_DEFAULT_REG);
 }
 
 #ifdef CONFIG_CONSOLE_POLL
@@ -670,6 +671,16 @@ static void msm_geni_serial_poll_put_char(struct uart_port *uport,
 #endif
 
 #if defined(CONFIG_SERIAL_CORE_CONSOLE) || defined(CONFIG_CONSOLE_POLL)
+static bool is_console_enable(void)
+{
+	unsigned int para;
+	para = get_debug_config();
+	if(para & CONSOLE_OPERATION)
+		return true;
+	else
+		return false;
+}
+
 static void msm_geni_serial_wr_char(struct uart_port *uport, int ch)
 {
 	geni_write_reg_nolog(ch, uport->membase, SE_GENI_TX_FIFOn);
@@ -738,6 +749,9 @@ static void msm_geni_serial_console_write(struct console *co, const char *s,
 
 	WARN_ON(co->index < 0 || co->index >= GENI_UART_NR_PORTS);
 
+	if(!is_console_enable())
+		return;
+
 	port = get_port_from_line(co->index, true);
 	if (IS_ERR_OR_NULL(port))
 		return;
@@ -804,6 +818,54 @@ static int handle_rx_console(struct uart_port *uport,
 }
 
 #endif /* (CONFIG_SERIAL_CORE_CONSOLE) || defined(CONFIG_CONSOLE_POLL)) */
+
+void set_geni_manual_rfr(struct uart_port *uport)
+{
+	struct msm_geni_serial_port *port = GET_DEV_PORT(uport);
+	u32 uart_manual_rfr = 0, read_actual_rfr = 0;
+	/*
+	 * If the clients haven't done a manual flow on/off then go ahead and
+	 * set this to manual flow on.
+	 */
+	if (!port->manual_flow) {
+		uart_manual_rfr |= UART_MANUAL_RFR_EN;
+		geni_write_reg_nolog(uart_manual_rfr, port->uport.membase,
+							SE_UART_MANUAL_RFR);
+		/*Ensure RFR write takes place in sequence*/
+		wmb();
+
+		/* Read back manual rfr to make sure write goes through */
+		read_actual_rfr = geni_read_reg_nolog(port->uport.membase,
+							SE_UART_MANUAL_RFR);
+		udelay(100);
+
+		uart_manual_rfr |= UART_RFR_NOT_READY;
+		geni_write_reg_nolog(uart_manual_rfr, port->uport.membase,
+							SE_UART_MANUAL_RFR);
+		/*Ensure RFR write takes place in sequence*/
+		wmb();
+
+		/* Read back manual rfr to make sure write goes through */
+		read_actual_rfr = geni_read_reg_nolog(port->uport.membase,
+							SE_UART_MANUAL_RFR);
+		udelay(100);
+		/*
+		 * Ensure that the manual flow on writes go through before
+		 * doing a stop_rx else we could end up flowing off the peer.
+		 */
+		uart_manual_rfr = UART_MANUAL_RFR_EN;
+		uart_manual_rfr |= UART_RFR_READY;
+		geni_write_reg_nolog(uart_manual_rfr, port->uport.membase,
+							SE_UART_MANUAL_RFR);
+		/*Ensure RFR write takes place in sequence*/
+		wmb();
+
+		/* Read back manual rfr to make sure write goes through */
+		read_actual_rfr = geni_read_reg_nolog(port->uport.membase,
+							SE_UART_MANUAL_RFR);
+		udelay(100);
+	}
+}
 
 static int msm_geni_serial_prep_dma_tx(struct uart_port *uport)
 {
@@ -1078,7 +1140,6 @@ static void stop_rx_sequencer(struct uart_port *uport)
 	unsigned int geni_status;
 	struct msm_geni_serial_port *port = GET_DEV_PORT(uport);
 	u32 irq_clear = S_CMD_DONE_EN;
-	bool done;
 
 	IPC_LOG_MSG(port->ipc_log_misc, "%s\n", __func__);
 	if (port->xfer_mode == FIFO_MODE) {
@@ -1099,22 +1160,15 @@ static void stop_rx_sequencer(struct uart_port *uport)
 	/* Possible stop rx is called multiple times. */
 	if (!(geni_status & S_GENI_CMD_ACTIVE))
 		goto exit_rx_seq;
-	geni_cancel_s_cmd(uport->membase);
-	/*
-	 * Ensure that the cancel goes through before polling for the
-	 * cancel control bit.
-	 */
-	mb();
-	done = msm_geni_serial_poll_bit(uport, SE_GENI_S_CMD_CTRL_REG,
-					S_GENI_CMD_CANCEL, false);
-	geni_status = geni_read_reg_nolog(uport->membase, SE_GENI_STATUS);
-	if (!done)
-		IPC_LOG_MSG(port->ipc_log_misc, "%s Cancel fail 0x%x\n",
-							__func__, geni_status);
 
 	geni_write_reg_nolog(irq_clear, uport->membase, SE_GENI_S_IRQ_CLEAR);
-	if ((geni_status & S_GENI_CMD_ACTIVE))
+	/* Ensure cmd done gets executed */
+	mb();
+	geni_status = geni_read_reg_nolog(uport->membase, SE_GENI_STATUS);
+	IPC_LOG_MSG(port->ipc_log_misc, "%s:0x%x\n", __func__, geni_status);
+        if ((geni_status & S_GENI_CMD_ACTIVE))
 		msm_geni_serial_abort_rx(uport);
+
 exit_rx_seq:
 	if (port->xfer_mode == SE_DMA && port->rx_dma) {
 		msm_geni_serial_rx_fsm_rst(uport);
@@ -2053,6 +2107,9 @@ msm_geni_serial_early_console_write(struct console *con, const char *s,
 {
 	struct earlycon_device *dev = con->data;
 
+	if(!is_console_enable())
+		return;
+
 	__msm_geni_serial_console_write(&dev->port, s, n);
 }
 
@@ -2431,6 +2488,16 @@ static int msm_geni_serial_probe(struct platform_device *pdev)
 		ret = PTR_ERR(dev_port->serial_rsc.geni_pinctrl);
 		goto exit_geni_serial_probe;
 	}
+
+	//config geni TX/RX as sleep status once debug.config is 0
+	if(!is_console_enable() && is_console) {
+		dev_port->serial_rsc.geni_gpio_active =
+		pinctrl_lookup_state(dev_port->serial_rsc.geni_pinctrl,
+							PINCTRL_SLEEP);
+		dev_port->serial_rsc.geni_gpio_sleep =
+		pinctrl_lookup_state(dev_port->serial_rsc.geni_pinctrl,
+							PINCTRL_SLEEP);
+	} else {
 	dev_port->serial_rsc.geni_gpio_active =
 		pinctrl_lookup_state(dev_port->serial_rsc.geni_pinctrl,
 							PINCTRL_DEFAULT);
@@ -2457,6 +2524,7 @@ static int msm_geni_serial_probe(struct platform_device *pdev)
 			ret = PTR_ERR(dev_port->serial_rsc.geni_gpio_sleep);
 			goto exit_geni_serial_probe;
 		}
+	}
 	}
 
 	wakeup_source_init(&dev_port->geni_wake, dev_name(&pdev->dev));
@@ -2515,10 +2583,8 @@ static int msm_geni_serial_runtime_suspend(struct device *dev)
 {
 	struct platform_device *pdev = to_platform_device(dev);
 	struct msm_geni_serial_port *port = platform_get_drvdata(pdev);
-	int ret = 0;
-	u32 uart_manual_rfr = 0;
-	u32 geni_status = geni_read_reg_nolog(port->uport.membase,
-							SE_GENI_STATUS);
+	u32 geni_status = 0;
+        int ret = 0;
 
 	wait_for_transfers_inflight(&port->uport);
 	/*
@@ -2528,30 +2594,13 @@ static int msm_geni_serial_runtime_suspend(struct device *dev)
 	 * Resources off
 	 */
 	disable_irq(port->uport.irq);
-	/*
-	 * If the clients haven't done a manual flow on/off then go ahead and
-	 * set this to manual flow on.
-	 */
-	if (!port->manual_flow) {
-		u32 geni_ios;
-
-		uart_manual_rfr |= (UART_MANUAL_RFR_EN | UART_RFR_READY);
-		geni_write_reg_nolog(uart_manual_rfr, port->uport.membase,
-							SE_UART_MANUAL_RFR);
-		/*
-		 * Ensure that the manual flow on writes go through before
-		 * doing a stop_rx else we could end up flowing off the peer.
-		 */
-		mb();
-		geni_ios = geni_read_reg_nolog(port->uport.membase,
-								SE_GENI_IOS);
-		IPC_LOG_MSG(port->ipc_log_pwr, "%s: Manual Flow ON 0x%x 0x%x\n",
-					 __func__, uart_manual_rfr, geni_ios);
-		udelay(10);
-	}
-	stop_rx_sequencer(&port->uport);
-	if ((geni_status & M_GENI_CMD_ACTIVE))
+	set_geni_manual_rfr(&port->uport);
+	geni_status = geni_read_reg_nolog(port->uport.membase, SE_GENI_STATUS);
+        if ((geni_status & M_GENI_CMD_ACTIVE))
 		stop_tx_sequencer(&port->uport);
+	stop_rx_sequencer(&port->uport);
+	/* Make sure rx is stopped before clock off */
+	wmb();
 	ret = se_geni_resources_off(&port->serial_rsc);
 	if (ret) {
 		dev_err(dev, "%s: Error ret %d\n", __func__, ret);

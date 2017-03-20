@@ -51,9 +51,14 @@ ifeq ($(TARGET_PREBUILT_KERNEL),)
 
 KERNEL_GCC_NOANDROID_CHK := $(shell (echo "int main() {return 0;}" | $(KERNEL_CROSS_COMPILE)gcc -E -mno-android - > /dev/null 2>&1 ; echo $$?))
 ifeq ($(strip $(KERNEL_GCC_NOANDROID_CHK)),0)
-KERNEL_CFLAGS := KCFLAGS=-mno-android
+KCFLAGS := -mno-android
 endif
-
+ifeq ($(FACTORY_IMAGE),true)
+KCFLAGS += -DFACTORY_IMAGE
+endif
+ifneq ($(strip $(KCFLAGS)),)
+KERNEL_CFLAGS := KCFLAGS="$(KCFLAGS)"
+endif
 mkfile_path := $(abspath $(lastword $(MAKEFILE_LIST)))
 current_dir := $(notdir $(patsubst %/,%,$(dir $(mkfile_path))))
 TARGET_KERNEL := msm-$(TARGET_KERNEL_VERSION)
@@ -97,6 +102,13 @@ endif
 KERNEL_HEADERS_INSTALL := $(KERNEL_OUT)/usr
 KERNEL_MODULES_INSTALL ?= system
 KERNEL_MODULES_OUT ?= $(PRODUCT_OUT)/$(KERNEL_MODULES_INSTALL)/lib/modules
+# By default KERNEL_PRODUCT_NAME is TARGET_PRODUCT, but user can
+# also specifiy different name in product config file
+ifeq ($(strip $(KERNEL_PRODUCT_NAME)),)
+KERNEL_PRODUCT_NAME := $(TARGET_PRODUCT)
+endif
+KBUILD_PRODUCT_NAME := $(shell echo $(KERNEL_PRODUCT_NAME) | tr A-Z a-z)
+export KBUILD_PRODUCT_NAME
 
 TARGET_PREBUILT_KERNEL := $(TARGET_PREBUILT_INT_KERNEL)
 

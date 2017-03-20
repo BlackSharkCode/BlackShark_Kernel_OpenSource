@@ -15,4 +15,5 @@
 int qcom_step_chg_init(struct device *dev,
 		bool step_chg_enable, bool sw_jeita_enable);
 void qcom_step_chg_deinit(void);
+void qcom_step_chg_aging_mode(bool aging_running);
 #endif /* __STEP_CHG_H__ */

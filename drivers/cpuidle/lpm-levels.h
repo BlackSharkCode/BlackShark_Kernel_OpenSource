@@ -43,6 +43,9 @@ struct lpm_cpu {
 	int nlevels;
 	unsigned int psci_mode_shift;
 	unsigned int psci_mode_mask;
+	uint32_t ref_stddev;
+	uint32_t ref_premature_cnt;
+	uint32_t tmr_add;
 	bool lpm_prediction;
 	struct cpuidle_driver *drv;
 	struct lpm_cluster *parent;
@@ -52,10 +55,16 @@ struct lpm_level_avail {
 	bool idle_enabled;
 	bool suspend_enabled;
 	uint32_t latency_us;
+	uint32_t ref_premature_cnt;
+	uint32_t ref_stddev;
+	uint32_t tmr_add;
 	struct kobject *kobj;
 	struct kobj_attribute idle_enabled_attr;
 	struct kobj_attribute suspend_enabled_attr;
 	struct kobj_attribute latency_attr;
+	struct kobj_attribute lpm_premature_cnt_attr;
+	struct kobj_attribute lpm_stddev_attr;
+	struct kobj_attribute lpm_tmr_add_attr;
 	void *data;
 	int idx;
 	bool cpu_node;

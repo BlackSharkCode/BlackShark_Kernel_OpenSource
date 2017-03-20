@@ -31,6 +31,13 @@ enum lpm_type {
 	LPM_TYPE_NR
 };
 
+enum pred_params {
+	REF_PREMATURE_CNT,
+	REF_STDDEV,
+	TMR_ADD,
+	PRED_PARAM_NR
+};
+
 struct lpm_type_str {
 	enum lpm_type type;
 	char *str;
@@ -42,11 +49,31 @@ static const struct lpm_type_str lpm_types[] = {
 	{LATENCY, "latency_us"},
 };
 
+static const struct lpm_type_str pred_params[] = {
+	{REF_PREMATURE_CNT, "ref_premature_cnt"},
+	{REF_STDDEV, "ref_stddev"},
+	{TMR_ADD, "tmr_add"},
+};
+
 static DEFINE_PER_CPU(uint32_t *, max_residency);
 static DEFINE_PER_CPU(uint32_t *, min_residency);
 static struct lpm_level_avail *cpu_level_available[NR_CPUS];
 static struct platform_device *lpm_pdev;
 
+static void *get_pred_enabled_ptr(struct kobj_attribute *attr,
+					struct lpm_level_avail *avail)
+{
+	void *arg = NULL;
+
+	if (!strcmp(attr->attr.name, pred_params[REF_PREMATURE_CNT].str))
+		arg = (void *) &avail->ref_premature_cnt;
+	else if (!strcmp(attr->attr.name, pred_params[REF_STDDEV].str))
+		arg = (void *) &avail->ref_stddev;
+	else if (!strcmp(attr->attr.name, pred_params[TMR_ADD].str))
+		arg = (void *) &avail->tmr_add;
+
+	return arg;
+}
 static void *get_enabled_ptr(struct kobj_attribute *attr,
 					struct lpm_level_avail *avail)
 {
@@ -58,6 +85,24 @@ static void *get_enabled_ptr(struct kobj_attribute *attr,
 		arg = (void *) &avail->suspend_enabled;
 
 	return arg;
+}
+
+static struct lpm_level_avail *get_pred_avail_ptr(struct kobject *kobj,
+					struct kobj_attribute *attr)
+{
+	struct lpm_level_avail *avail = NULL;
+
+	if (!strcmp(attr->attr.name, pred_params[REF_PREMATURE_CNT].str))
+		avail = container_of(attr, struct lpm_level_avail,
+					lpm_premature_cnt_attr);
+	else if (!strcmp(attr->attr.name, pred_params[REF_STDDEV].str))
+		avail = container_of(attr, struct lpm_level_avail,
+					lpm_stddev_attr);
+	else if (!strcmp(attr->attr.name, pred_params[TMR_ADD].str))
+		avail = container_of(attr, struct lpm_level_avail,
+					lpm_tmr_add_attr);
+
+	return avail;
 }
 
 static struct lpm_level_avail *get_avail_ptr(struct kobject *kobj,
@@ -192,6 +237,22 @@ static ssize_t lpm_latency_show(struct kobject *kobj,
 	return ret;
 }
 
+ssize_t pred_param_show(struct kobject *kobj, struct kobj_attribute *attr,
+				char *buf)
+{
+	int ret = 0;
+	struct kernel_param kp;
+
+	kp.arg = get_pred_enabled_ptr(attr, get_pred_avail_ptr(kobj, attr));
+	ret = param_get_uint(buf, &kp);
+	if (ret > 0) {
+		strlcat(buf, "\n", PAGE_SIZE);
+		ret++;
+	}
+
+	return ret;
+}
+
 ssize_t lpm_enable_show(struct kobject *kobj, struct kobj_attribute *attr,
 				char *buf)
 {
@@ -206,6 +267,64 @@ ssize_t lpm_enable_show(struct kobject *kobj, struct kobj_attribute *attr,
 	}
 
 	return ret;
+}
+
+ssize_t lpm_stddev_store(struct kobject *kobj, struct kobj_attribute *attr,
+				const char *buf, size_t len)
+{
+	int ret = 0;
+	struct kernel_param kp;
+	struct lpm_level_avail *avail;
+	struct lpm_cpu *cpu;
+
+	avail = get_pred_avail_ptr(kobj, attr);
+	if (WARN_ON(!avail))
+		return -EINVAL;
+
+	cpu = avail->data;
+	kp.arg = get_pred_enabled_ptr(attr, avail);
+	ret = param_set_uint(buf, &kp);
+	cpu->ref_stddev = avail->ref_stddev;
+	return ret ? ret : len;
+}
+
+ssize_t lpm_tmr_add_store(struct kobject *kobj, struct kobj_attribute *attr,
+				const char *buf, size_t len)
+{
+	int ret = 0;
+	struct kernel_param kp;
+	struct lpm_level_avail *avail;
+	struct lpm_cpu *cpu;
+
+	avail = get_pred_avail_ptr(kobj, attr);
+	if (WARN_ON(!avail))
+		return -EINVAL;
+
+	cpu = avail->data;
+	kp.arg = get_pred_enabled_ptr(attr, avail);
+	ret = param_set_uint(buf, &kp);
+	cpu->tmr_add = avail->tmr_add;
+
+	return ret ? ret : len;
+}
+
+ssize_t lpm_premature_cnt_store(struct kobject *kobj, struct kobj_attribute *attr,
+				const char *buf, size_t len)
+{
+	int ret = 0;
+	struct kernel_param kp;
+	struct lpm_level_avail *avail;
+	struct lpm_cpu *cpu;
+	avail = get_pred_avail_ptr(kobj, attr);
+	if (WARN_ON(!avail))
+		return -EINVAL;
+
+	cpu = avail->data;
+	kp.arg = get_pred_enabled_ptr(attr, avail);
+	ret = param_set_uint(buf, &kp);
+	cpu->ref_premature_cnt = avail->ref_premature_cnt;
+
+	return ret ? ret : len;
 }
 
 ssize_t lpm_enable_store(struct kobject *kobj, struct kobj_attribute *attr,
@@ -228,6 +347,75 @@ ssize_t lpm_enable_store(struct kobject *kobj, struct kobj_attribute *attr,
 		set_optimum_cluster_residency(avail->data, false);
 
 	return ret ? ret : len;
+}
+static int create_pred_param_nodes(const char *name,
+			struct kobject *parent, struct lpm_level_avail *avail,
+			void *data, int index, bool cpu_node)
+{
+	struct attribute_group *attr_group = NULL;
+	struct attribute **attr = NULL;
+	struct kobject *kobj = NULL;
+	int ret = 0;
+
+	kobj = kobject_create_and_add(name, parent);
+	if (!kobj)
+		return -ENOMEM;
+
+	attr_group = devm_kzalloc(&lpm_pdev->dev, sizeof(*attr_group),
+					GFP_KERNEL);
+	if (!attr_group) {
+		ret = -ENOMEM;
+		goto failed;
+	}
+
+	attr = devm_kzalloc(&lpm_pdev->dev,
+		sizeof(*attr) * (PRED_PARAM_NR + 1), GFP_KERNEL);
+	if (!attr) {
+		ret = -ENOMEM;
+		goto failed;
+	}
+
+	sysfs_attr_init(&avail->lpm_premature_cnt_attr.attr);
+	avail->lpm_premature_cnt_attr.attr.name = pred_params[REF_PREMATURE_CNT].str;
+	avail->lpm_premature_cnt_attr.attr.mode = 0644;
+	avail->lpm_premature_cnt_attr.show = pred_param_show;
+	avail->lpm_premature_cnt_attr.store = lpm_premature_cnt_store;
+
+	sysfs_attr_init(&avail->lpm_stddev_attr.attr);
+	avail->lpm_stddev_attr.attr.name = pred_params[REF_STDDEV].str;
+	avail->lpm_stddev_attr.attr.mode = 0644;
+	avail->lpm_stddev_attr.show = pred_param_show;
+	avail->lpm_stddev_attr.store = lpm_stddev_store;
+
+	sysfs_attr_init(&avail->lpm_tmr_add_attr.attr);
+	avail->lpm_tmr_add_attr.attr.name = pred_params[TMR_ADD].str;
+	avail->lpm_tmr_add_attr.attr.mode = 0644;
+	avail->lpm_tmr_add_attr.show = pred_param_show;
+	avail->lpm_tmr_add_attr.store = lpm_tmr_add_store;
+
+	attr[0] = &avail->lpm_premature_cnt_attr.attr;
+	attr[1] = &avail->lpm_stddev_attr.attr;
+	attr[2] = &avail->lpm_tmr_add_attr.attr;
+	attr[3] = NULL;
+	attr_group->attrs = attr;
+
+	ret = sysfs_create_group(kobj, attr_group);
+	if (ret) {
+		ret = -ENOMEM;
+		goto failed;
+	}
+
+
+	avail->kobj = kobj;
+	avail->data = data;
+	avail->idx = index;
+	avail->cpu_node = cpu_node;
+
+	return ret;
+
+failed:
+	kobject_put(kobj);
+	return ret;
 }
 
 static int create_lvl_avail_nodes(const char *name,
@@ -306,7 +494,7 @@ static int create_cpu_lvl_nodes(struct lpm_cluster *p, struct kobject *parent)
 	int cpu;
 	int i, cpu_idx;
 	struct kobject **cpu_kobj = NULL;
-	struct lpm_level_avail *level_list = NULL;
+	struct lpm_level_avail *level_list = NULL, *pred_params_avail = NULL;
 	char cpu_name[20] = {0};
 	int ret = 0;
 	struct list_head *pos;
@@ -337,10 +525,26 @@ static int create_cpu_lvl_nodes(struct lpm_cluster *p, struct kobject *parent)
 				goto release_kobj;
 			}
 
+			pred_params_avail = devm_kzalloc(&lpm_pdev->dev,
+					sizeof(*pred_params_avail),
+					GFP_KERNEL);
+			if (!pred_params_avail) {
+				ret = -ENOMEM;
+				goto release_mem;
+			}
+
 			/*
 			 * Skip enable/disable for WFI. cpuidle expects WFI to
 			 * be available at all times.
 			 */
+
+			ret = create_pred_param_nodes(
+						"pred_params",
+						cpu_kobj[cpu_idx],
+						pred_params_avail,
+						(void *)lpm_cpu, cpu,
+						true);
+
 			for (i = 1; i < lpm_cpu->nlevels; i++) {
 				level_list[i].latency_us =
 					p->levels[i].pwr.latency_us;
@@ -359,7 +563,8 @@ static int create_cpu_lvl_nodes(struct lpm_cluster *p, struct kobject *parent)
 	}
 
 	return ret;
-
+release_mem:
+	devm_kfree(&lpm_pdev->dev, level_list);
 release_kobj:
 	for (i = 0; i < cpumask_weight(&p->child_cpus); i++)
 		kobject_put(cpu_kobj[i]);
@@ -715,6 +920,15 @@ static int parse_cpu_levels(struct device_node *node, struct lpm_cluster *c)
 
 	key = "qcom,use-prediction";
 	cpu->lpm_prediction = of_property_read_bool(node, key);
+
+	key = "qcom,ref_stddev";
+	of_property_read_u32(node, key, &cpu->ref_stddev);
+
+	key = "qcom,tmr_add";
+	of_property_read_u32(node, key, &cpu->tmr_add);
+
+	key = "qcom,ref_premature_cnt";
+	of_property_read_u32(node, key, &cpu->ref_premature_cnt);
 
 	key = "parse_cpu";
 	ret = parse_cpu(node, cpu);

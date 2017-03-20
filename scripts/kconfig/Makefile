@@ -83,7 +83,7 @@ simple-targets := oldconfig allnoconfig allyesconfig allmodconfig \
 PHONY += $(simple-targets)
 
 $(simple-targets): $(obj)/conf
-	$< $(silent) --$@ $(Kconfig)
+	$<  --$@ $(Kconfig)
 
 PHONY += oldnoconfig savedefconfig defconfig
 
@@ -93,23 +93,28 @@ PHONY += oldnoconfig savedefconfig defconfig
 oldnoconfig: olddefconfig
 
 savedefconfig: $(obj)/conf
-	$< $(silent) --$@=defconfig $(Kconfig)
+	$< --$@=defconfig $(Kconfig)
 
 defconfig: $(obj)/conf
 ifeq ($(KBUILD_DEFCONFIG),)
-	$< $(silent) --defconfig $(Kconfig)
+	$< --defconfig $(Kconfig)
 else
 ifneq ($(wildcard $(srctree)/arch/$(SRCARCH)/configs/$(KBUILD_DEFCONFIG)),)
 	@$(kecho) "*** Default configuration is based on '$(KBUILD_DEFCONFIG)'"
-	$(Q)$< $(silent) --defconfig=arch/$(SRCARCH)/configs/$(KBUILD_DEFCONFIG) $(Kconfig)
+	$(Q)$< --defconfig=arch/$(SRCARCH)/configs/$(KBUILD_DEFCONFIG) $(Kconfig)
 else
 	@$(kecho) "*** Default configuration is based on target '$(KBUILD_DEFCONFIG)'"
 	$(Q)$(MAKE) -f $(srctree)/Makefile $(KBUILD_DEFCONFIG)
 endif
 endif
-
+ifneq ($(KBUILD_PRODUCT_NAME),)
 %_defconfig: $(obj)/conf
-	$(Q)$< $(silent) --defconfig=arch/$(SRCARCH)/configs/$@ $(Kconfig)
+	$(Q)$(CONFIG_SHELL) $(srctree)/scripts/kconfig/product_config.sh $(KBUILD_PRODUCT_NAME) $@
+	$(Q)$< --defconfig=.product_config $(Kconfig)
+else
+%_defconfig: $(obj)/conf
+	$(Q)$< --defconfig=arch/$(SRCARCH)/configs/$@ $(Kconfig)
+endif
 
 configfiles=$(wildcard $(srctree)/kernel/configs/$@ $(srctree)/arch/$(SRCARCH)/configs/$@)
 

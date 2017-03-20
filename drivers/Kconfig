@@ -206,6 +206,12 @@ source "drivers/hwtracing/intel_th/Kconfig"
 
 source "drivers/fpga/Kconfig"
 
+# device detect
+source "drivers/devdetect/Kconfig"
+
 source "drivers/sensors/Kconfig"
+
+# Shark debug feature
+source "drivers/shark_util/Kconfig"
 
 endmenu

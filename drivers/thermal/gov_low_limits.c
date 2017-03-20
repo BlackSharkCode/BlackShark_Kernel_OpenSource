@@ -28,7 +28,7 @@ static void thermal_zone_trip_update(struct thermal_zone_device *tz, int trip)
 	enum thermal_trip_type trip_type;
 	struct thermal_instance *instance;
 	bool throttle;
-	int old_target;
+	unsigned long old_target;
 
 	tz->ops->get_trip_temp(tz, trip, &trip_temp);
 	tz->ops->get_trip_type(tz, trip, &trip_type);
@@ -56,13 +56,17 @@ static void thermal_zone_trip_update(struct thermal_zone_device *tz, int trip)
 			"Trip%d[type=%d,temp=%d,hyst=%d],throttle=%d\n",
 			trip, trip_type, trip_temp, trip_hyst, throttle);
 
-		old_target = instance->target;
+		if (!instance->initialized)
+			old_target = THERMAL_NO_TARGET;
+		else
+			old_target = instance->target;
+
 		instance->target = (throttle) ? instance->upper
 					: THERMAL_NO_TARGET;
 		dev_dbg(&instance->cdev->device, "old_target=%d, target=%d\n",
-					old_target, (int)instance->target);
+					(int)old_target, (int)instance->target);
 
-		if (old_target == instance->target)
+		if (instance->initialized && old_target == instance->target)
 			continue;
 
 		if (old_target == THERMAL_NO_TARGET &&
@@ -75,6 +79,7 @@ static void thermal_zone_trip_update(struct thermal_zone_device *tz, int trip)
 			tz->passive -= 1;
 		}
 
+		instance->initialized = true;
 		instance->cdev->updated = false; /* cdev needs update */
 	}
 

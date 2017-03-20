@@ -65,8 +65,18 @@
 #include <asm/efi.h>
 #include <asm/xen/hypervisor.h>
 #include <asm/mmu_context.h>
+#include <asm/bootinfo.h>
 
 phys_addr_t __fdt_pointer __initdata;
+
+void __init early_init_dt_setup_pureason_arch(unsigned long pu_reason)
+{
+#ifdef CONFIG_BOOT_INFO
+	set_powerup_reason(pu_reason);
+#else
+	pr_err("set_powerup_reason func is not definedi, pu_reason = 0x%x\n", pu_reason);
+#endif
+}
 
 unsigned int boot_reason;
 EXPORT_SYMBOL(boot_reason);

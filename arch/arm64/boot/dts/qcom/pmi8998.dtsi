@@ -832,7 +832,7 @@
 
 		trips {
 			low_soc: low-soc {
-				temperature = <10>;
+				temperature = <5>;
 				hysteresis = <0>;
 				type = "passive";
 			};

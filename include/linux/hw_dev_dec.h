@@ -1,0 +1,30 @@
+#ifndef _HW_DEV_DCT_H_
+#define _HW_DEV_DCT_H_
+
+/* PERIPHIAL : periphial */
+
+/* hw device list */
+enum hw_device_type {
+    DEV_PERIPHIAL_START,
+    DEV_AUDIO_CODEC = DEV_PERIPHIAL_START,// id : 0   order number: 1
+    DEV_PERIPHIAL_CAMERA_MAIN, // 1
+    DEV_PERIPHIAL_CAMERA_REARAUX, //2
+    DEV_PERIPHIAL_CAMERA_SLAVE, // 3
+    DEV_PERIPHIAL_CAMERA_DSP, // 4
+    DEV_PERIPHIAL_CHARGER_MASTER, // 5
+    DEV_PERIPHIAL_CHARGER_SLAVE, // 6
+    DEV_PERIPHIAL_BATTERY, // 7
+    DEV_PERIPHIAL_USB_SWITCH, // 8
+    DEV_PERIPHIAL_LCD_DSP, // 9
+    DEV_PERIPHIAL_RGB, // 10
+    DEV_PERIPHIAL_TP, //11
+    DEV_CONNECTIVITY_START, // 12
+    DEV_CONNECTIVITY_WIFI = DEV_CONNECTIVITY_START, // 12
+    DEV_CONNECTIVITY_MAX,
+    DEV_PERIPHIAL_MAX = DEV_CONNECTIVITY_MAX,
+};
+
+/* set a device flag as true */
+int set_hw_dev_flag( int dev_id );
+
+#endif

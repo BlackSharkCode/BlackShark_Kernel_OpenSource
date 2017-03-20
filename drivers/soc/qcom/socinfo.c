@@ -596,6 +596,7 @@ static struct msm_soc_info cpu_of_id[] = {
 static enum msm_cpu cur_cpu;
 static int current_image;
 static uint32_t socinfo_format;
+static int board_id = 10;
 
 static struct socinfo_v0_1 dummy_socinfo = {
 	.format = SOCINFO_VERSION(0, 1),
@@ -679,6 +680,22 @@ uint32_t socinfo_get_platform_version(void)
 		(socinfo_format >= SOCINFO_VERSION(0, 4) ?
 			socinfo->v0_4.platform_version : 0)
 		: 0;
+}
+
+static int socinfo_handle_board_id(char *str)
+{
+	if(0 == strncmp(str, "0x1", strlen("0x1")))
+		return board_id = 1;
+	else if(0 == strncmp(str, "0x2", strlen("0x2")))
+		return board_id = 2;
+	else
+		return board_id = 10;
+}
+__setup("androidboot.hw_boardid=", socinfo_handle_board_id);
+
+uint32_t socinfo_get_board_id(void)
+{
+	return board_id;
 }
 
 /* This information is directly encoded by the machine id */
@@ -879,6 +896,15 @@ msm_get_platform_version(struct device *dev,
 {
 	return snprintf(buf, PAGE_SIZE, "%u\n",
 		socinfo_get_platform_version());
+}
+
+static ssize_t
+msm_get_board_id(struct device *dev,
+				struct device_attribute *attr,
+				char *buf)
+{
+	return snprintf(buf, PAGE_SIZE, "%u\n",
+		socinfo_get_board_id());
 }
 
 static ssize_t
@@ -1277,6 +1303,10 @@ static struct device_attribute msm_soc_attr_platform_version =
 	__ATTR(platform_version, S_IRUGO,
 			msm_get_platform_version, NULL);
 
+static struct device_attribute msm_soc_attr_board_id =
+	__ATTR(board_id, S_IRUGO,
+			msm_get_board_id, NULL);
+
 static struct device_attribute msm_soc_attr_accessory_chip =
 	__ATTR(accessory_chip, S_IRUGO,
 			msm_get_accessory_chip, NULL);
@@ -1534,6 +1564,8 @@ static void __init populate_soc_sysfs_files(struct device *msm_soc_device)
 	case SOCINFO_VERSION(0, 4):
 		device_create_file(msm_soc_device,
 					&msm_soc_attr_platform_version);
+		device_create_file(msm_soc_device,
+					&msm_soc_attr_board_id);
 	case SOCINFO_VERSION(0, 3):
 		device_create_file(msm_soc_device,
 					&msm_soc_attr_hw_platform);

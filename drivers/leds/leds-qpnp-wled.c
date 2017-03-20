@@ -26,6 +26,14 @@
 #include <linux/delay.h>
 #include <linux/leds-qpnp-wled.h>
 #include <linux/qpnp/qpnp-revid.h>
+#if defined(CONFIG_DRM)
+#include <drm/drm_notifier.h>
+#include <linux/ktime.h>
+
+#define BACKLIGHT_DELAY_CLOSE 200
+u32 timeus_0;
+ktime_t ktime_0, ktime_1;
+#endif
 
 /* base addresses */
 #define QPNP_WLED_CTRL_BASE		"qpnp-wled-ctrl-base"
@@ -407,6 +415,11 @@ struct qpnp_wled {
 	bool			auto_calib_done;
 	bool			module_dis_perm;
 	ktime_t			start_ovp_fault_time;
+#if defined(CONFIG_DRM)
+	int			lcd_blank;
+	struct notifier_block drm_notif;
+	struct work_struct	delay_work;
+#endif
 };
 
 /* helper to read a pmic register */
@@ -947,7 +960,7 @@ static void qpnp_wled_work(struct work_struct *work)
 	wled = container_of(work, struct qpnp_wled, work);
 
 	level = wled->cdev.brightness;
-
+	pr_info("brightness %d\n", level);
 	mutex_lock(&wled->lock);
 
 	if (level) {
@@ -985,6 +998,80 @@ unlock_mutex:
 	mutex_unlock(&wled->lock);
 }
 
+
+#if defined(CONFIG_DRM)
+/* use to delay close backlight after lcd stop frame */
+static void backlight_delay_close_work(struct work_struct *work)
+{
+	struct qpnp_wled *wled;
+	unsigned long timeout;
+
+	wled = container_of(work, struct qpnp_wled, delay_work);
+	timeout = jiffies + msecs_to_jiffies(BACKLIGHT_DELAY_CLOSE);
+
+	ktime_0 = ktime_get();
+
+	while (1) {
+		msleep(5);
+		if (wled->cdev.brightness != LED_OFF) {
+			pr_info("brightness value has changed\n");
+			break;
+		}
+		if (wled->lcd_blank == 1) {
+			break;
+		}
+		if (time_after(jiffies, timeout)) {
+			pr_info("close backlight timeout\n");
+			break;
+		}
+	}
+
+	if (LED_OFF == wled->cdev.brightness) {
+		schedule_work(&wled->work);
+	}
+
+}
+
+static int drm_notifier_callback(struct notifier_block *nb, unsigned long val, void *data)
+{
+	struct qpnp_wled *wled = container_of(nb, struct qpnp_wled, drm_notif);
+	struct drm_notify_data *evdata = data;
+	unsigned int blank;
+
+	if (val != DRM_EVENT_BLANK)
+	    return 0;
+
+	pr_info(" %s val %lu\n", __func__, val);
+
+	if (evdata && evdata->data && (val == DRM_EVENT_BLANK) && wled) {
+	    blank = *(int *)(evdata->data);
+
+	    switch (blank) {
+	    case DRM_BLANK_LCDOFF:
+			wled->lcd_blank = 1;
+			ktime_1 = ktime_get();
+			timeus_0 = (u32) ktime_to_us(ktime_1) - (u32)ktime_to_us(ktime_0);
+			pr_info("DRM_BLANK_LCDOFF time %d\n", timeus_0);
+	        break;
+
+	    case DRM_BLANK_UNBLANK:
+			wled->lcd_blank = 0;
+	        break;
+
+	    default:
+	        break;
+	    }
+	}
+
+	return NOTIFY_OK;
+
+}
+
+static struct notifier_block wled_noti_block = {
+	.notifier_call = drm_notifier_callback,
+};
+#endif
+
 /* get api registered with led classdev for wled brightness */
 static enum led_brightness qpnp_wled_get(struct led_classdev *led_cdev)
 {
@@ -1009,7 +1096,12 @@ static void qpnp_wled_set(struct led_classdev *led_cdev,
 		level = wled->cdev.max_brightness;
 
 	wled->cdev.brightness = level;
-	schedule_work(&wled->work);
+#if defined(CONFIG_DRM)
+	if (level == LED_OFF)
+		schedule_work(&wled->delay_work);
+	else
+#endif
+		schedule_work(&wled->work);
 }
 
 static int qpnp_wled_set_disp(struct qpnp_wled *wled, u16 base_addr)
@@ -2429,6 +2521,9 @@ static int qpnp_wled_parse_dt(struct qpnp_wled *wled)
 	if (wled->ovp_irq < 0)
 		dev_dbg(&pdev->dev, "ovp irq is not used\n");
 
+    /* disable ovp irq temporary */
+    wled->ovp_irq = -1;
+
 	wled->sc_irq = platform_get_irq_byname(pdev, "sc-irq");
 	if (wled->sc_irq < 0)
 		dev_dbg(&pdev->dev, "sc irq is not used\n");
@@ -2517,6 +2612,9 @@ static int qpnp_wled_probe(struct platform_device *pdev)
 	}
 
 	INIT_WORK(&wled->work, qpnp_wled_work);
+#if defined(CONFIG_DRM)
+	INIT_WORK(&wled->delay_work, backlight_delay_close_work);
+#endif
 	wled->ramp_ms = QPNP_WLED_RAMP_DLY_MS;
 	wled->ramp_step = 1;
 
@@ -2539,6 +2637,13 @@ static int qpnp_wled_probe(struct platform_device *pdev)
 			goto sysfs_fail;
 		}
 	}
+#if defined(CONFIG_DRM)
+	wled->drm_notif = wled_noti_block;
+	rc = drm_register_client(&wled->drm_notif);
+	if(rc) {
+		pr_err("register drm_notifier failed. rc=%d\n", rc);
+	}
+#endif
 
 	return 0;
 
@@ -2549,6 +2654,9 @@ sysfs_fail:
 	led_classdev_unregister(&wled->cdev);
 wled_register_fail:
 	cancel_work_sync(&wled->work);
+#if defined(CONFIG_DRM)
+	cancel_work_sync(&wled->delay_work);
+#endif
 	mutex_destroy(&wled->lock);
 	return rc;
 }
@@ -2564,6 +2672,9 @@ static int qpnp_wled_remove(struct platform_device *pdev)
 
 	led_classdev_unregister(&wled->cdev);
 	cancel_work_sync(&wled->work);
+#if defined(CONFIG_DRM)
+	cancel_work_sync(&wled->delay_work);
+#endif
 	mutex_destroy(&wled->lock);
 
 	return 0;

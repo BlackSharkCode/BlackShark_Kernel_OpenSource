@@ -1,0 +1,734 @@
+/*
+ * Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+
+#include "blackshark/devdetect.dtsi"
+#include "sdm845-pinctrl-shark-preevt.dtsi"
+#include "sdm845-regulator-shark-preevt.dtsi"
+#include "dsi-panel-synaptics-td4310-video.dtsi"
+#include "dsi-panel-synaptics-td4310-cmd.dtsi"
+#include "sdm845-audio-shark.dtsi"
+#include "msm-smb138x.dtsi"
+#include "sdm845-vs-memshare-shark.dtsi"
+
+/*
+  device check : the 0 means that it don't need to check;
+    the 1 means that it check at board level and phone level test(running test);
+    the 2 means that it only check at phone level test(running test);
+*/
+
+&devcheck {
+	status = "ok";
+	codec = <0>;
+	camera_main = <0>;
+	camera_rearaux = <0>;
+	camera_slave = <0>;
+	camera_dsp = <0>; // PT & BC(?)
+	charge_master = <0>;
+	charge_slave = <0>;
+	battery = <0>;
+	usb_switch = <0>;
+	lcd_dsp = <0>;
+	rgb = <0>;
+	tp = <0>;
+	wifi = <0>;
+};
+
+&spmi_bus {
+       qcom,pm8998@0 {
+               qcom,clkdiv@5d00 {
+                       compatible = "qcom,qpnp-clkdiv";
+                       reg = <0x5d00 0x100>;
+                       #clock-cells = <1>;
+                       qcom,cxo-freq = <19200000>;
+                       qcom,clkdiv-id = <3>;
+                       qcom,clkdiv-init-freq = <19200000>;
+               };
+       };
+
+       /* shark vbus change to pmi supply */
+       qcom,pmi8998@2 {
+                qcom,usb-pdphy@1700 {
+                    vbus-supply = <&smb2_vbus>;
+                };
+        };
+
+		qcom,pmi8998@3 {
+
+			   qcom,leds@d000 {
+				   qcom,rgb_0 {
+				   	   linux,name = "red";
+					   qcom,default-state = "off";
+					   linux,default-trigger = "none";
+					   qcom,start-idx = <0>;
+					   qcom,idx-len = <48>;
+					   qcom,turn-off-delay-ms = <500>;
+					   qcom,duty-pcts =
+						   [00 00 01 02 03 04 05 06 07 08 09 08 07 06 05 04 03 02 01 00 00 00 00 00
+						   00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00];
+					   qcom,use-blink;
+					   qcom,lut-flags = <3>;
+					   qcom,pause-lo = <0>;
+					   qcom,pause-hi = <0>;
+					   qcom,ramp-step-ms = <100>;
+					   qcom,pwm-us = <1000>;
+					   qcom,max-current = <12>;
+				   };
+
+				   qcom,rgb_1 {
+				   	   linux,name = "green";
+					   qcom,default-state = "off";
+					   linux,default-trigger = "none";
+					   qcom,start-idx = <0>;
+					   qcom,idx-len = <48>;
+					   qcom,turn-off-delay-ms = <500>;
+					   qcom,duty-pcts =
+						   [00 00 01 02 03 04 05 06 07 08 09 08 07 06 05 04 03 02 01 00 00 00 00 00
+						   00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00];
+					   qcom,use-blink;
+					   qcom,lut-flags = <3>;
+					   qcom,pause-lo = <0>;
+					   qcom,pause-hi = <0>;
+					   qcom,ramp-step-ms = <100>;
+					   qcom,pwm-us = <1000>;
+					   qcom,max-current = <12>;
+				   };
+
+				   qcom,rgb_2 {
+				   	   linux,name = "blue";
+					   qcom,default-state = "off";
+					   linux,default-trigger = "none";
+					   qcom,start-idx = <0>;
+					   qcom,idx-len = <48>;
+					   qcom,turn-off-delay-ms = <500>;
+					   qcom,duty-pcts =
+						   [00 00 01 02 03 04 05 06 07 08 09 08 07 06 05 04 03 02 01 00 00 00 00 00
+						   00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00];
+					   qcom,use-blink;
+					   qcom,lut-flags = <3>;
+					   qcom,pause-lo = <0>;
+					   qcom,pause-hi = <0>;
+					   qcom,ramp-step-ms = <100>;
+					   qcom,pwm-us = <1000>;
+					   qcom,max-current = <12>;
+				   };
+			   };
+		   };
+};
+
+
+&mdss_dsi0_pll {
+//	qcom,dsi-pll-ssc-en;
+	qcom,ssc-frequency-hz = <30000>;
+	qcom,ssc-ppm = <5000>;
+//	qcom,ssc-spread-mode = "down";
+};
+
+
+&soc {
+/*	dsi_synaptics_td4310_video_tianma_display: qcom,dsi-display@14 {
+		compatible = "qcom,dsi-display";
+		label = "dsi_synap_video_tianma_display";
+		qcom,display-type = "primary";
+		qcom,dsi-ctrl = <&mdss_dsi0>;
+		qcom,dsi-phy = <&mdss_dsi_phy0>;
+		clocks = <&mdss_dsi0_pll BYTECLK_MUX_0_CLK>,
+			<&mdss_dsi0_pll PCLK_MUX_0_CLK>, <&pm8998_div_clk3 0>;
+		clock-names = "src_byte_clk", "src_pixel_clk", "div_clk3";
+		pinctrl-names = "panel_active", "panel_suspend", "default";
+		pinctrl-0 = <&sde_dsi_active &sde_te_active>;
+		pinctrl-1 = <&sde_dsi_suspend &sde_te_suspend>;
+		pinctrl-2 = <&clk_out_default>;
+		qcom,dsi-panel = <&dsi_synaptics_td4310_video_tianma>;
+                vddio-supply = <&pm8998_l14>;
+                lab-supply = <&lab_regulator>;
+                ibb-supply = <&ibb_regulator>;
+	};*/
+        dsi_synaptics_td4310_cmd_tianma_display: qcom,dsi-display@15 {
+                compatible = "qcom,dsi-display";
+                label = "dsi_synap_cmd_tianma_display";
+                qcom,display-type = "primary";
+                qcom,dsi-ctrl = <&mdss_dsi0>;
+                qcom,dsi-phy = <&mdss_dsi_phy0>;
+                clocks = <&mdss_dsi0_pll BYTECLK_MUX_0_CLK>,
+                        <&mdss_dsi0_pll PCLK_MUX_0_CLK>, <&pm8998_div_clk3 0>;
+                clock-names = "src_byte_clk", "src_pixel_clk", "div_clk3";
+                pinctrl-names = "panel_active", "panel_suspend", "default";
+                pinctrl-0 = <&sde_dsi_active &sde_te_active>;
+                pinctrl-1 = <&sde_dsi_suspend &sde_te_suspend>;
+                pinctrl-2 = <&clk_out_default>;
+                qcom,dsi-panel = <&dsi_synaptics_td4310_cmd_tianma>;
+                vddio-supply = <&pm8998_l14>;
+                lab-supply = <&lab_regulator>;
+                ibb-supply = <&ibb_regulator>;
+	};
+
+	qcom,qbt1000 {
+		status = "disabled";
+	};
+
+	/*rpmh-regulator-ldoa13 {
+		regulator-l13 {
+			regulator-min-microvolt = <3300000>;
+			regulator-max-microvolt = <3310000>;
+			qcom,init-voltage = <3300000>;
+			regulator-always-on;
+		};
+	};*/
+
+	rpmh-regulator-ldoa19 {
+		regulator-l19 {
+			regulator-max-microvolt = <3310000>;
+			qcom,init-voltage = <3100000>;
+			regulator-always-on;
+		};
+	};
+
+	fpsensor {
+		status = "ok";
+		compatible = "goodix,fingerprint";
+		vdd_io-supply   = <&pm8998_l19>;
+		//vdd_io-supply   = <&pm8998_l13>;
+		fp,gpio_rst    = <&tlmm 128 0x00>;
+		fp,gpio_irq    = <&tlmm 121 0x00>;
+		//master-id = <84>;
+		interrupt-parent = <&tlmm>;
+		interrupts = <121 0x0>;
+    };
+};
+
+&qusb_phy0 {
+	qcom,tune-efuse-correction = <0x4>;
+};
+
+&dsi_nt35597_truly_dsc_cmd_display {
+       /delete-property/ qcom,dsi-display-active;
+};
+/*
+&dsi_synaptics_td4310_video_tianma_display {
+	qcom,dsi-display-active;
+};
+*/
+&dsi_synaptics_td4310_cmd_tianma_display {
+	qcom,dsi-display-active;
+};
+/*
+
+&dsi_synaptics_td4310_video_tianma {
+	qcom,mdss-dsi-t-clk-post = <0x13>;
+	qcom,mdss-dsi-t-clk-pre = <0x47>;
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_wled";
+	qcom,mdss-dsi-bl-min-level = <1>;
+	qcom,mdss-dsi-bl-max-level = <4095>;
+	qcom,platform-te-gpio = <&tlmm 10 0>;
+	qcom,platform-reset-gpio = <&tlmm 94 0>;
+	qcom,dsp-reset-gpio = <&tlmm 51 0>;
+	qcom,dsp-dsp_1v1 = <&tlmm 37 0>;
+	qcom,mdss-dsi-mode-sel-gpio-state = "single_port";
+
+	qcom,mdss-dsi-display-timings {
+		timing@0{
+                            qcom,mdss-dsi-panel-phy-timings = [E2 36 24 00 66 68 28 38 2A 03 04 00];
+
+			qcom,display-topology = <1 0 1>,
+						<1 0 2>;
+			qcom,default-topology-index = <0>;
+		};
+	};
+};*/
+
+&dsi_synaptics_td4310_cmd_tianma {
+        qcom,mdss-dsi-t-clk-post = <0x0E>;
+        qcom,mdss-dsi-t-clk-pre = <0x34>;
+        qcom,panel-supply-entries = <&dsi_panel_pwr_supply>;
+        qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_wled";
+        qcom,mdss-dsi-bl-min-level = <1>;
+        qcom,mdss-dsi-bl-max-level = <4095>;
+        qcom,mdss-brightness-max-level = <4095>;
+        qcom,platform-te-gpio = <&tlmm 10 0>;
+        qcom,platform-reset-gpio = <&tlmm 94 0>;
+        qcom,dsp-reset-gpio = <&tlmm 51 0>;
+        qcom,dsp-dsp_1v1 = <&tlmm 37 0>;
+        qcom,mdss-dsi-mode-sel-gpio-state = "single_port";
+        qcom,mdss-dsi-display-timings {
+                timing@0{
+                        qcom,mdss-dsi-panel-phy-timings = [00 22 08 09 25 23 09 09 06 03 04 00];
+
+			qcom,display-topology = <1 0 1>,
+						<1 0 2>;
+			qcom,default-topology-index = <0>;
+		};
+	};
+};
+/*
+&dsi_panel_pwr_supply {
+
+        qcom,panel-supply-entry@1 {
+            qcom,supply-post-on-sleep = <20>;
+        };
+};
+*/
+ &pmi8998_haptics {
+        qcom,vmax-mv = <2828>;
+        qcom,wave-play-rate-us = <4878>;
+		qcom,wave-play-shark-long-rate-us = <5155>;
+        qcom,lra-auto-mode;
+        qcom,wave-shape = "sine";
+
+        /* add buf waveform self-defined */
+        qcom,effect-max = <3>;
+        qcom,effect-arry = [7e b0 00 00 00 00 00 00
+			3e 3e 3e be a0 00 00 00
+			7e 7e 7e 7e be be 00 00];
+
+        status = "okay";
+ };
+
+&qupv3_se3_i2c {
+    status = "ok";
+    awinic@2c {
+        compatible = "awinic,aw9120_led";
+        reg = <0x2c>;
+        awinic,pdn-gpio = <&tlmm 39 0x00>;
+        /*awinic,irq-gpio = <&tlmm 55 0x8>;*/
+        pinctrl-names = "awinic_pin_active","awinic_pin_suspend";
+        pinctrl-0 = <&aw9120_pdn_gpio_active /*&aw9120_int_gpio_active*/>;
+        pinctrl-1 = <&aw9120_pdn_gpio_suspend /*&aw9120_int_gpio_suspend*/>;
+        aw9120,pwm-freq = <245>;//can only be 245 or 122
+        aw9120,dimming-mode = "loge";//this para can be "loge", "log10", "linear",default value is "loge"
+        aw9120,led1 {
+            led1,red{
+                aw9120,name = "led1:red";
+                aw9120,id = <0>;
+                aw9120,max-brightness = <255>;
+                aw9120,max-current = <17>;
+            };
+            led1,green{
+                aw9120,name = "led1:green";
+                aw9120,id = <1>;
+                aw9120,max-brightness = <255>;
+                aw9120,max-current = <17>;
+            };
+            led1,blue{
+                aw9120,name = "led1:blue";
+                aw9120,id = <2>;
+                aw9120,max-brightness = <255>;
+                aw9120,max-current = <17>;
+            };
+        };
+        aw9120,led2 {
+            led2,red{
+                aw9120,name = "led2:red";
+                aw9120,id = <3>;
+                aw9120,max-brightness = <255>;
+                aw9120,max-current = <17>;
+            };
+            led2,green{
+                aw9120,name = "led2:green";
+                aw9120,id = <4>;
+                aw9120,max-brightness = <255>;
+                aw9120,max-current = <17>;
+            };
+            led2,blue{
+                aw9120,name = "led2:blue";
+                aw9120,id = <5>;
+                aw9120,max-brightness = <255>;
+                aw9120,max-current = <17>;
+            };
+        };
+        aw9120,led3 {
+            led3,red{
+                aw9120,name = "led3:red";
+                aw9120,id = <6>;
+                aw9120,max-brightness = <255>;
+                aw9120,max-current = <17>;
+            };
+            led3,green{
+                aw9120,name = "led3:green";
+                aw9120,id = <7>;
+                aw9120,max-brightness = <255>;
+                aw9120,max-current = <17>;
+            };
+            led3,blue{
+                aw9120,name = "led3:blue";
+                aw9120,id = <15>;
+                aw9120,max-brightness = <255>;
+                aw9120,max-current = <17>;
+            };
+        };
+        aw9120,led4 {
+            led4,red{
+                aw9120,name = "led4:red";
+                aw9120,id = <9>;
+                aw9120,max-brightness = <255>;
+                aw9120,max-current = <17>;
+            };
+            led4,green{
+                aw9120,name = "led4:green";
+                aw9120,id = <10>;
+                aw9120,max-brightness = <255>;
+                aw9120,max-current = <17>;
+            };
+            led4,blue{
+                aw9120,name = "led4:blue";
+                aw9120,id = <11>;
+                aw9120,max-brightness = <255>;
+                aw9120,max-current = <17>;
+            };
+        };
+        aw9120,led5 {
+            led5,red{
+                aw9120,name = "led5:red";
+                aw9120,id = <12>;
+                aw9120,max-brightness = <255>;
+                aw9120,max-current = <17>;
+            };
+            led5,green{
+                aw9120,name = "led5:green";
+                aw9120,id = <13>;
+                aw9120,max-brightness = <255>;
+                aw9120,max-current = <17>;
+            };
+            led5,blue{
+                aw9120,name = "led5:blue";
+                aw9120,id = <14>;
+                aw9120,max-brightness = <255>;
+                aw9120,max-current = <17>;
+            };
+        };
+    };
+
+
+	aw2015@64 {/* add for breath led. */
+		compatible = "awinic,aw2015_led";
+		reg = <0x64>;
+		aw2015,red {
+			aw2015,name = "red";
+			aw2015,id = <0>;
+			aw2015,imax = <2>;
+			aw2015,led-current = <255>;
+			aw2015,max-brightness = <255>;
+			aw2015,rise-time-ms = <6>;
+			aw2015,hold-time-ms = <0>;
+			aw2015,fall-time-ms = <6>;
+			aw2015,off-time-ms = <4>;
+		};
+		aw2015,green {
+			aw2015,name = "green";
+			aw2015,id = <1>;
+			aw2015,imax = <2>;
+			aw2015,led-current = <255>;
+			aw2015,max-brightness = <255>;
+			aw2015,rise-time-ms = <6>;
+			aw2015,hold-time-ms = <0>;
+			aw2015,fall-time-ms = <6>;
+			aw2015,off-time-ms = <4>;
+		};
+		aw2015,blue {
+			aw2015,name = "blue";
+			aw2015,id = <2>;
+			aw2015,imax = <2>;
+			aw2015,led-current = <255>;
+			aw2015,max-brightness = <255>;
+			aw2015,rise-time-ms = <6>;
+			aw2015,hold-time-ms = <0>;
+			aw2015,fall-time-ms = <6>;
+			aw2015,off-time-ms = <4>;
+		};
+	};
+};
+
+
+&qupv3_se5_i2c {
+	status = "okay";
+
+	/* Novatek device tree node */
+	novatek@62 {
+		compatible = "novatek,NVT-ts";
+		reg = <0x62>;
+		status = "ok";
+
+		//vdd-supply = <&pm8994_lvs2>;    //VDDIO
+		avdd-supply = <&pm8998_l14>;    //VDD
+
+		novatek,reset-gpio = <&tlmm 89 0x00>;
+		novatek,irq-gpio = <&tlmm 125 0x2001>;
+
+		novatek,button-keys = <158 0x244>;
+
+
+		/* MP */
+		//novatek,mp-support-dt;
+
+		novatek-mp-criteria-nvtpid@0 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			compatible = "novatek-mp-criteria-nvtpid";
+
+			/* MP Config */
+			IC_X_CFG_SIZE = <18>;
+			IC_Y_CFG_SIZE = <32>;
+			IC_KEY_CFG_SIZE = <4>;
+			X_Channel = <18>;
+			Y_Channel = <30>;
+			AIN_X = <17 16 15 14 13 12 11 10 9 8 7 6 5 4 3 2 1 0>;
+			AIN_Y = <0xFF 0xFF 29 28 27 26 25 24 23 22 21 20 19 18 17 16 15
+								14 13 12 11 10 9 8 7 6 5 4 3 2 1 0>;
+			AIN_KEY = <0 1 2 0xFF>;
+
+			/* MP Criteria */
+			PS_Config_Lmt_Short_Rawdata_P = <20000>;
+			PS_Config_Lmt_Short_Rawdata_N = <11550>;
+			PS_Config_Lmt_Key_Short_Rawdata_P = <20000>;
+			PS_Config_Lmt_Key_Short_Rawdata_N = <11550>;
+			PS_Config_Lmt_Short_Diff_P = <6300>;
+			PS_Config_Lmt_Short_Diff_N = <0>;
+			PS_Config_Lmt_Key_Short_Diff_P = <6300>;
+			PS_Config_Lmt_Key_Short_Diff_N = <0>;
+			PS_Config_Lmt_Short_Base_P = <2000>;
+			PS_Config_Lmt_Short_Base_N = <(-2000)>;
+			PS_Config_Lmt_Key_Short_Base_P = <2000>;
+			PS_Config_Lmt_Key_Short_Base_N = <(-2000)>;
+
+			PS_Config_Lmt_Open_Rawdata_P = <
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000 13000
+				13000 13000 13000>;
+
+			PS_Config_Lmt_Open_Rawdata_N = <
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500 6500
+				6500 6500 6500>;
+
+			PS_Config_Lmt_FW_Rawdata_P = <
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000 2000
+				2000 2000 2000>;
+
+			PS_Config_Lmt_FW_Rawdata_N= <
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400
+				400 400 400>;
+
+			PS_Config_Lmt_FW_CC_P = <38>;
+			PS_Config_Lmt_FW_CC_N = <9>;
+			PS_Config_Lmt_Key_FW_CC_P = <38>;
+			PS_Config_Lmt_Key_FW_CC_N = <9>;
+
+			PS_Config_Lmt_FW_CC_I_P = <25>;
+			PS_Config_Lmt_FW_CC_I_N = <0>;
+			PS_Config_Lmt_FW_CC_Q_P = <25>;
+			PS_Config_Lmt_FW_CC_Q_N = <0>;
+			PS_Config_Lmt_Key_FW_CC_I_P = <25>;
+			PS_Config_Lmt_Key_FW_CC_I_N = <0>;
+			PS_Config_Lmt_Key_FW_CC_Q_P = <25>;
+			PS_Config_Lmt_Key_FW_CC_Q_N = <0>;
+
+			PS_Config_Lmt_FW_Diff_P = <35>;
+			PS_Config_Lmt_FW_Diff_N = <(-35)>;
+			PS_Config_Lmt_Key_FW_Diff_P = <35>;
+			PS_Config_Lmt_Key_FW_Diff_N = <(-35)>;
+
+			PS_Config_Diff_Test_Frame = <50>;
+		};
+	};
+};
+
+&qupv3_se12_i2c {
+	status = "ok";
+    tas2559@4c{
+        compatible = "ti,tas2559";
+        reg = <0x4c>;
+        ti,tas2559-reset-gpio = <&tlmm 79 0x00>;
+        ti,tas2560-reset-gpio = <&tlmm 6 0x00>;
+        ti,tas2559-irq-gpio = <&tlmm 123 0>;
+        ti,tas2560-irq-gpio = <&tlmm 122 0>;
+        ti,tas2559-addr = <0x4c>;
+        ti,tas2560-addr = <0x4e>;
+        ti,tas2559-channel = <0>; /* 0, left; 1, right */
+        ti,tas2560-channel = <1>; /* 0, left; 1, right */
+        ti,ycrc-enable = <1>;           /* 0, disable; non-zero, enable */
+        ti,echo-ref = <0>;              /* 0, left channel; 1, right channel; 2, both */
+        ti,bit-rate = <16>;             /* 16, 20, 24, 32 */
+	};
+};
+
+&pmi8998_charger {
+	qcom,usb-icl-ua = <2800000>;
+	qcom,fcc-max-ua = <3500000>;
+	qcom,fv-max-uv =  <4400000>;
+	qcom,auto-recharge-soc;
+
+	qcom,sw-jeita-enable;
+	qcom,battery-data = <&mtp_batterydata>;
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&gpio9_dig_out_default>;
+	slave-shdn = <&pm8998_gpios 9 GPIO_ACTIVE_HIGH>;
+};
+
+&pmi8998_fg {
+	qcom,fg-sys-term-current = <(-400)>;
+	qcom,fg-chg-term-current = <120>;
+
+	qcom,fg-recharge-soc-thr = <99>;
+	qcom,fg-auto-recharge-soc;
+	qcom,hold-soc-while-full;
+	qcom,linearize-soc;
+
+	qcom,fg-cutoff-voltage   = <3200>;
+	qcom,fg-empty-voltage    = <3000>;
+	qcom,fg-cc-cv-threshold-mv = <4390>;
+
+	qcom,fg-jeita-thresholds = <0 15 45 55>;
+	qcom,fg-aging-jeita-thresholds = <(-20) 15 45 68>;
+	qcom,fg-jeita-hyst-temp  = <2>;
+	qcom,fg-batt-temp-delta  = <6>;
+
+	qcom,fg-rsense-sel       = <2>;
+	qcom,fg-force-load-profile;
+};
+
+&wil6210 {
+	status = "disabled";
+};
+
+&mtp_batterydata {
+	qcom,batt-id-range-pct = <50>;
+	#include "fg-gen3-batterydata-shark-atl-4000mah.dtsi"
+	#include "fg-gen3-batterydata-shark-sunwoda-4000mah.dtsi"
+	/delete-node/ qcom,itech_3000mah;
+	/delete-node/ qcom,ascent_3450mah;
+	/delete-node/ qcom,Demo_battery_6000mah;
+};
+
+&pmi8998_wled {
+        status = "okay";
+        qcom,fs-curr-ua = <20000>;
+        qcom,led-strings-list = [00 01];
+};
+
+

@@ -32,6 +32,10 @@
 #include <linux/of_gpio.h>
 #include <linux/cdev.h>
 #include <linux/platform_device.h>
+
+#include <linux/hawkeye/hawkeye_pub.h>
+#include <linux/hawkeye/hawkeye_errno.h>
+
 #include <soc/qcom/subsystem_restart.h>
 #include <soc/qcom/subsystem_notif.h>
 #include <soc/qcom/sysmon.h>
@@ -52,6 +56,24 @@ module_param(enable_debug, int, 0644);
 /* The maximum shutdown timeout is the product of MAX_LOOPS and DELAY_MS. */
 #define SHUTDOWN_ACK_MAX_LOOPS	100
 #define SHUTDOWN_ACK_DELAY_MS	100
+
+/*hawkeye subsystem point*/
+#define HAWKEYE_SUBSYSTEM_REPORT(err,fmt,arg...)\
+    ({\
+        int msgid = -1;\
+        if(gfd_bms < 0){\
+            gfd_bms = hawkeye_bms_register_client("subsys_restart",NULL);\
+        }\
+        if(gfd_bms > 0){\
+            msgid = hawkeye_bms_msg_start(gfd_bms,err);\
+            if(msgid > 0){\
+                hawkeye_bms_msg_record(msgid,fmt,##arg);\
+                hawkeye_bms_msg_stop(msgid);\
+           }\
+        }else{\
+            prehawkeye_bms_msg_record(err,fmt,##arg);\
+        }\
+    })
 
 /**
  * enum p_subsys_state - state of a subsystem (private)
@@ -366,7 +388,7 @@ module_param(enable_mini_ramdumps, int, 0644);
 
 struct workqueue_struct *ssr_wq;
 static struct class *char_class;
-
+static int gfd_bms = -1;//hawkeye bms client fd
 static LIST_HEAD(restart_log_list);
 static LIST_HEAD(subsys_list);
 static LIST_HEAD(ssr_order_list);
@@ -1016,6 +1038,8 @@ static void subsystem_restart_wq_func(struct work_struct *work)
 
 	pr_info("[%s:%d]: Restart sequence for %s completed.\n",
 			current->comm, current->pid, desc->name);
+
+	HAWKEYE_SUBSYSTEM_REPORT(BMS_STAB_KERNEL_SSR,"{\"Pocess\":\"%p\",\"Desc\":\"%s\"}",current, desc->name);
 
 err:
 	/* Reset subsys count */
@@ -1794,6 +1818,10 @@ static int __init subsys_restart_init(void)
 	if (ret)
 		goto err_soc;
 
+	gfd_bms = hawkeye_bms_register_client("subsys_restart",NULL);
+	if(gfd_bms < 0){
+		pr_err("####Failed to register hawkeye subsys class\n");
+	}
 	return 0;
 
 err_soc:

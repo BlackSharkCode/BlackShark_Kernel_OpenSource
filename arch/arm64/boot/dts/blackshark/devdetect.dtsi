@@ -1,0 +1,23 @@
+/*
+* This dtsi is for device check. They may use in bc check and running test.
+*/
+&vendor {
+	devcheck: devcheck {
+		compatible = "device_check";
+		codec = <0>;
+		camera_main = <2>;
+		camera_rearaux = <2>;
+		camera_slave = <2>;
+		camera_dsp = <0>;
+		charge_master = <1>;
+		charge_salve = <2>;
+		wifi = <0>;
+		battery = <0>;
+		usb_switch = <0>;
+		lcd_dsp = <0>;
+		rgb = <1>;
+		tp = <0>;
+		status = "disable";
+	};
+};
+

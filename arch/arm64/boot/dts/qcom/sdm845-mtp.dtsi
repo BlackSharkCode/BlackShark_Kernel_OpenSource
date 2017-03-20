@@ -13,8 +13,9 @@
 #include <dt-bindings/gpio/gpio.h>
 #include "sdm845-pmic-overlay.dtsi"
 #include "sdm845-pinctrl-overlay.dtsi"
-#include "sdm845-camera-sensor-mtp.dtsi"
-#include "smb1355.dtsi"
+//Delete qcom mtp camera dtsi and use blackshark camera dtsi, terry.long@blackshark.com, 2017.11.08
+//#include "sdm845-camera-sensor-mtp.dtsi"
+
 
 &vendor {
 	bluetooth: bt_wcn3990 {
@@ -257,11 +258,12 @@
 	status = "ok";
 };
 
-&pmi8998_switch1 {
-	pinctrl-names = "led_enable", "led_disable";
-	pinctrl-0 = <&flash_led3_front_en>;
-	pinctrl-1 = <&flash_led3_front_dis>;
-};
+//Delete front camera flash gpio control, terry.long@blackshark.com, 2017.11.27
+//&pmi8998_switch1 {
+//	pinctrl-names = "led_enable", "led_disable";
+//	pinctrl-0 = <&flash_led3_front_en>;
+//	pinctrl-1 = <&flash_led3_front_dis>;
+//};
 
 &pmi8998_switch2 {
 	pinctrl-names = "led_enable", "led_disable";
@@ -290,15 +292,6 @@
 	qcom,battery-data = <&mtp_batterydata>;
 };
 
-&smb1355_charger_0 {
-	status = "ok";
-	qcom,disable-ctm;
-};
-
-&smb1355_charger_1 {
-	status = "ok";
-	qcom,disable-ctm;
-};
 
 &qupv3_se9_2uart {
 	status = "ok";

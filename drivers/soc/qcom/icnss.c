@@ -312,6 +312,7 @@ static struct icnss_vreg_info icnss_vreg_info[] = {
 	{NULL, "vdd-1.8-xo", 1800000, 1800000, 0, 0, false},
 	{NULL, "vdd-1.3-rfa", 1304000, 1304000, 0, 0, false},
 	{NULL, "vdd-3.3-ch0", 3312000, 3312000, 0, 0, false},
+	{NULL, "vdd-3.5-fem5G", 3500000, 3500000, 800000, 0, false},
 };
 
 #define ICNSS_VREG_INFO_SIZE		ARRAY_SIZE(icnss_vreg_info)

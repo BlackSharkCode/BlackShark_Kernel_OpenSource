@@ -16,7 +16,14 @@
 #include "cam_sensor_util.h"
 #include "cam_soc_util.h"
 #include "cam_trace.h"
-
+//Set camera HW detect flag, terry.long@blackshark.com, 2017.11.23
+#ifdef CONFIG_HW_DEV_DCT
+#include  <linux/hw_dev_dec.h>
+#endif
+//Read imx376j & imx376k sensor internal otp about DPC and write to bin, terry.long@blackshark.com
+#ifdef CONFIG_CAMERA_DRIVER_SHARK
+#include <linux/fs.h>
+#endif
 
 static void cam_sensor_update_req_mgr(
 	struct cam_sensor_ctrl_t *s_ctrl,
@@ -538,6 +545,102 @@ int cam_sensor_match_id(struct cam_sensor_ctrl_t *s_ctrl)
 		return -EINVAL;
 	}
 
+	//Camera 2nd vendor module check, terry.long@blackshark.com, 20180315
+#if 1
+	if(0 == s_ctrl->soc_info.index || 1 == s_ctrl->soc_info.index)
+	{
+		uint16_t uEEPROMSlaveaddr = 0;
+		struct cam_sensor_cci_client *pCCIClient = 0;
+		int32_t iResult = 0;
+		uint32_t uEEPROMData = 0;
+		bool bReadEEPROMSuccess = false;
+
+		if(0 == s_ctrl->soc_info.index) //imx486
+		{
+			uEEPROMSlaveaddr = 0xa2;
+		}
+		else //imx376aux
+		{
+			uEEPROMSlaveaddr = 0xa8;
+		}
+		
+		pCCIClient = kzalloc(sizeof(struct cam_sensor_cci_client), GFP_KERNEL);
+		if(!pCCIClient)
+		{
+			CAM_ERR(CAM_SENSOR, "%s %d: kzalloc cci client fail!", __func__, __LINE__);
+		}
+		else
+		{
+			struct camera_io_master io_master_info = {CCI_MASTER, 0, pCCIClient, 0};
+
+			pCCIClient->cci_i2c_master = s_ctrl->io_master_info.cci_client->cci_i2c_master;
+			pCCIClient->sid = uEEPROMSlaveaddr >> 1;
+			pCCIClient->retries = 3;
+			pCCIClient->id_map = 0;
+			pCCIClient->i2c_freq_mode = I2C_FAST_MODE;
+
+			iResult = camera_io_init(&io_master_info);
+			if(iResult < 0)
+			{
+				CAM_ERR(CAM_SENSOR, "%s %d: cci init failed=%d", __func__, __LINE__, iResult);
+			}
+			else
+			{
+				iResult = camera_io_dev_read(&io_master_info, 0x0009, &uEEPROMData, CAMERA_SENSOR_I2C_TYPE_WORD, CAMERA_SENSOR_I2C_TYPE_BYTE);
+				if(iResult < 0)
+				{
+					CAM_ERR(CAM_SENSOR, "%s %d: cci read failed=%d", __func__, __LINE__, iResult);
+				}
+				else
+				{
+					bReadEEPROMSuccess = true;
+				}
+
+				iResult = camera_io_release(&io_master_info);
+				if(iResult < 0)
+				{
+					CAM_ERR(CAM_SENSOR, "%s %d: cci release failed=%d", __func__, __LINE__, iResult);
+				}
+			}
+			
+			kfree(pCCIClient);
+		}
+
+		if(true == bReadEEPROMSuccess)
+		{
+			//EEPROM vcm id: 1st=0x19, 2nd=0x1A
+			CAM_ERR(CAM_SENSOR, "%s %d: EEPROM VCMID=0x%x", __func__, __LINE__, uEEPROMData);
+			if(0x19 == uEEPROMData)
+			{
+				CAM_ERR(CAM_SENSOR, "%s %d: 1st vendor module, nothing to do!", __func__, __LINE__);
+			}
+			else if(0x1A == uEEPROMData)
+			{
+				CAM_ERR(CAM_SENSOR, "%s %d: 2nd vendor module, sensorId=0x%x", __func__, __LINE__, slave_info->sensor_id);
+				if(0xFFFF == slave_info->sensor_id) //imx486vcm
+				{
+					CAM_ERR(CAM_SENSOR, "%s %d: 2nd vendor module, sensorName=imx486vcm", __func__, __LINE__);
+					slave_info->sensor_id = 0x0486;
+				}
+				else if(0xEEEE == slave_info->sensor_id) //imx376auxvcm
+				{
+					CAM_ERR(CAM_SENSOR, "%s %d: 2nd vendor module, sensorName=imx376auxvcm", __func__, __LINE__);
+					slave_info->sensor_id = 0x0376;
+				}
+				else
+				{
+					CAM_ERR(CAM_SENSOR, "%s %d: 2nd vendor module, can not load this driver!", __func__, __LINE__);
+					return -ENODEV;
+				}
+			}
+			else
+			{
+				CAM_ERR(CAM_SENSOR, "%s %d: unknown vendor module, nothing to do!", __func__, __LINE__);
+			}
+		}
+	}
+#endif
+
 	rc = camera_io_dev_read(
 		&(s_ctrl->io_master_info),
 		slave_info->sensor_id_reg_addr,
@@ -553,6 +656,230 @@ int cam_sensor_match_id(struct cam_sensor_ctrl_t *s_ctrl)
 	}
 	return rc;
 }
+
+//Read imx376j & imx376k sensor internal otp about DPC and write to bin, terry.long@blackshark.com
+#ifdef CONFIG_CAMERA_DRIVER_SHARK
+static void readDPCAddress(struct cam_sensor_ctrl_t* pSctrl, uint32_t uSlotindex)
+{
+	int32_t iResult = 0;
+	uint32_t uNumDfct = 0;
+	uint32_t uAddrDfct = 0;
+	uint32_t uDataDfct = 0;
+	char* pDataArray = NULL;
+	char* pDataTemp = NULL;
+	struct file *fp = NULL;
+	mm_segment_t orig_fs;
+	loff_t pos = 0;
+	int32_t iReadedDfct = 0; //32 bits dfct data
+	uint32_t uNumReadedBit = 0; //every dfct data only 25bit, < 25
+
+	//check bin file exist
+	if(2 == uSlotindex) {
+		fp = filp_open("/data/misc/camera/remosaic_imx376j_fd_dfct.bin", O_RDONLY, 0644); //slot 2 = imx376j
+		if(fp != NULL && !IS_ERR(fp)){
+			filp_close(fp, NULL);
+			fp = NULL;
+			iResult = 0x01;
+		}
+
+		fp = filp_open("/data/misc/camera/remosaic_imx376j_sg_dfct.bin", O_RDONLY, 0644); //slot 2 = imx376j
+		if(fp != NULL && !IS_ERR(fp)){
+			filp_close(fp, NULL);
+			fp = NULL;
+			iResult = iResult | 0x02;
+		}
+	} else {
+		fp = filp_open("/data/misc/camera/remosaic_imx376k_fd_dfct.bin", O_RDONLY, 0644); //slot 1 = imx376k
+		if(fp != NULL && !IS_ERR(fp)){
+			filp_close(fp, NULL);
+			fp = NULL;
+			iResult = 0x04;
+		}
+
+		fp = filp_open("/data/misc/camera/remosaic_imx376k_sg_dfct.bin", O_RDONLY, 0644); //slot 1 = imx376k
+		if(fp != NULL && !IS_ERR(fp)){
+			filp_close(fp, NULL);
+			fp = NULL;
+			iResult = iResult | 0x08;
+		}
+	}
+
+	if(0 != iResult){
+		CAM_ERR(CAM_SENSOR, "readDPCAddress(), bin already exist: 0x%x", iResult);
+		return;
+	}
+	
+	// fd dfct address
+	camera_io_dev_read(&(pSctrl->io_master_info), 0xC001, &uNumDfct, CAMERA_SENSOR_I2C_TYPE_WORD, CAMERA_SENSOR_I2C_TYPE_BYTE);
+	uNumDfct = uNumDfct & 0x0F; //ony low 4 bit store the number of fd dfct
+	if(0 == uNumDfct) {
+		CAM_ERR(CAM_SENSOR, "readDPCAddress(), the number of fd dfct is 0!");
+	} else {
+		CAM_ERR(CAM_SENSOR, "readDPCAddress(), the number of fd dfct is %u", uNumDfct);
+		pDataArray = (char*)kzalloc(uNumDfct * 4, GFP_KERNEL);
+		if(NULL == pDataArray) {
+			CAM_ERR(CAM_SENSOR, "readDPCAddress(), kzalloc fd dfct fail!");
+		} else {
+			pDataTemp = pDataArray;
+			for(uAddrDfct = 0xC004; uAddrDfct <= 0xC01C; uAddrDfct++) {
+				camera_io_dev_read(&(pSctrl->io_master_info), uAddrDfct, &uDataDfct, CAMERA_SENSOR_I2C_TYPE_WORD, CAMERA_SENSOR_I2C_TYPE_BYTE);
+				//CAM_ERR(CAM_SENSOR, "readDPCAddress(), fd dfct, reg: 0x%04x, data: 0x%02x, int: %d/0x%08x, bits: %u/0x%08x", 
+				//	uAddrDfct, uDataDfct, iReadedDfct, iReadedDfct, uNumReadedBit, uNumReadedBit);
+				if(17 >= uNumReadedBit) {
+					iReadedDfct = (iReadedDfct << 8) | uDataDfct;
+					uNumReadedBit += 8;
+
+					if(25 == uNumReadedBit) {
+						//CAM_ERR(CAM_SENSOR, "readDPCAddress(), readed fd dfct 1: (%p, 0x%08x), reg: 0x%04X", pDataTemp, iReadedDfct, uAddrDfct);
+						memcpy(pDataTemp, &iReadedDfct, 4);
+						pDataTemp += 4;
+						
+						iReadedDfct = 0; //reset 32 bits dfct data
+						uNumReadedBit = 0; //reset bits number
+					}
+				} else if(25 > uNumReadedBit) {
+					iReadedDfct = (iReadedDfct << (25 - uNumReadedBit)) | (uDataDfct >> (uNumReadedBit - 17));
+					
+					//CAM_ERR(CAM_SENSOR, "readDPCAddress(), readed fd dfct 2: (%p, 0x%08x), reg: 0x%04X", pDataTemp, iReadedDfct, uAddrDfct);
+					memcpy(pDataTemp, &iReadedDfct, 4);
+					pDataTemp += 4;
+
+					//next dfct
+					if(pDataTemp < (pDataArray + uNumDfct * 4)) {
+						iReadedDfct = uDataDfct & (0xFF >> (25 - uNumReadedBit));
+						uNumReadedBit = uNumReadedBit - 17;
+					}
+				}
+
+				if(pDataTemp == (pDataArray + uNumDfct * 4)) {
+					break;
+				}
+			}
+
+			if(pDataTemp < (pDataArray + uNumDfct * 4)) {
+				CAM_ERR(CAM_SENSOR, "readDPCAddress(), error! not enough fd dfct data!");
+			}else{
+				iResult = 1;
+			}
+		}
+	}
+
+	// write fd dfct bin file
+	if(1 == iResult && NULL != pDataArray) {
+		orig_fs = get_fs();
+		set_fs(KERNEL_DS);
+		
+		if(2 == uSlotindex) {
+			fp = filp_open("/data/misc/camera/remosaic_imx376j_fd_dfct.bin", O_RDWR | O_CREAT, 0644); //slot 2 = imx376j
+		} else {
+			fp = filp_open("/data/misc/camera/remosaic_imx376k_fd_dfct.bin", O_RDWR | O_CREAT, 0644); //slot 1 = imx376k
+		}
+		
+		if(fp == NULL || IS_ERR(fp)) {
+			CAM_ERR(CAM_SENSOR, "readDPCAddress(), filp_open fd dfct bin fail!");
+		} else {
+			vfs_write(fp, (char __user *)pDataArray, uNumDfct * 4, &pos);
+			CAM_ERR(CAM_SENSOR, "readDPCAddress(), write fd dfct bin success!");
+			
+			filp_close(fp, NULL);
+			fp = NULL;
+		}
+
+		set_fs(orig_fs); // must do this
+	}
+
+	//free memory
+	if(NULL != pDataArray) {
+		kfree(pDataArray);
+		pDataArray = NULL;
+	}
+
+	// single dfct address
+	uNumDfct = 0;
+	camera_io_dev_read(&(pSctrl->io_master_info), 0xC003, &uNumDfct, CAMERA_SENSOR_I2C_TYPE_WORD, CAMERA_SENSOR_I2C_TYPE_BYTE);
+	if(0 == uNumDfct) {
+		CAM_ERR(CAM_SENSOR, "readDPCAddress(), the number of sg dfct is 0!");
+	} else {
+		CAM_ERR(CAM_SENSOR, "readDPCAddress(), the number of sg dfct is %u", uNumDfct);
+		pDataArray = (char*)kzalloc(uNumDfct * 4, GFP_KERNEL);
+		if(NULL == pDataArray) {
+			CAM_ERR(CAM_SENSOR, "readDPCAddress(), kzalloc sg dfct fail!");
+		} else {
+			pDataTemp = pDataArray;
+			for(uAddrDfct = 0xC020; uAddrDfct <= 0xC19A; uAddrDfct++) {
+				camera_io_dev_read(&(pSctrl->io_master_info), uAddrDfct, &uDataDfct, CAMERA_SENSOR_I2C_TYPE_WORD, CAMERA_SENSOR_I2C_TYPE_BYTE);
+				//CAM_ERR(CAM_SENSOR, "readDPCAddress(), sg dfct, reg: 0x%04x, data: 0x%02x, int: %d/0x%08x, bits: %u/0x%08x", 
+				//	uAddrDfct, uDataDfct, iReadedDfct, iReadedDfct, uNumReadedBit, uNumReadedBit);
+				if(17 >= uNumReadedBit) {
+					iReadedDfct = (iReadedDfct << 8) | uDataDfct;
+					uNumReadedBit += 8;
+
+					if(25 == uNumReadedBit) {
+						//CAM_ERR(CAM_SENSOR, "readDPCAddress(), readed sg dfct 1: (%p, 0x%08x), reg: 0x%04X", pDataTemp, iReadedDfct, uAddrDfct);
+						memcpy(pDataTemp, &iReadedDfct, 4);
+						pDataTemp += 4;
+						
+						iReadedDfct = 0; //reset 32 bits dfct data
+						uNumReadedBit = 0; //reset bits number
+					}
+				} else if(25 > uNumReadedBit) {
+					iReadedDfct = (iReadedDfct << (25 - uNumReadedBit)) | (uDataDfct >> (uNumReadedBit - 17));
+					
+					//CAM_ERR(CAM_SENSOR, "readDPCAddress(), readed sg dfct 2: (%p, 0x%08x), reg: 0x%04X", pDataTemp, iReadedDfct, uAddrDfct);
+					memcpy(pDataTemp, &iReadedDfct, 4);
+					pDataTemp += 4;
+
+					//next dfct
+					if(pDataTemp < (pDataArray + uNumDfct * 4)) {
+						iReadedDfct = uDataDfct & (0xFF >> (25 - uNumReadedBit));
+						uNumReadedBit = uNumReadedBit - 17;
+					}
+				}
+
+				if(pDataTemp == (pDataArray + uNumDfct * 4)) {
+					break;
+				}
+			}
+
+			if(pDataTemp < (pDataArray + uNumDfct * 4)) {
+				CAM_ERR(CAM_SENSOR, "readDPCAddress(), error! not enough sg dfct data!");
+			}else{
+				iResult = 2;
+			}
+		}
+	}
+
+	// write sg dfct bin file
+	if(2 == iResult && NULL != pDataArray) {
+		orig_fs = get_fs();
+		set_fs(KERNEL_DS);
+
+		if(2 == uSlotindex) {
+			fp = filp_open("/data/misc/camera/remosaic_imx376j_sg_dfct.bin", O_RDWR | O_CREAT, 0644); //slot 2 = imx376j
+		} else {
+			fp = filp_open("/data/misc/camera/remosaic_imx376k_sg_dfct.bin", O_RDWR | O_CREAT, 0644); //slot 1 = imx376k
+		}
+		
+		if(fp == NULL || IS_ERR(fp)) {
+			CAM_ERR(CAM_SENSOR, "readDPCAddress(), filp_open sg dfct bin fail!");
+		} else {
+			vfs_write(fp, (char __user *)pDataArray, uNumDfct * 4, &pos);
+			CAM_ERR(CAM_SENSOR, "readDPCAddress(), write sg dfct bin success!");
+			
+			filp_close(fp, NULL);
+			fp = NULL;
+		}
+
+		set_fs(orig_fs); // must do this
+	}
+
+	//free memory
+	if(NULL != pDataArray) {
+		kfree(pDataArray);
+		pDataArray = NULL;
+	}
+}
+#endif
 
 int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 	void *arg)
@@ -684,6 +1011,19 @@ int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 		 */
 		s_ctrl->is_probe_succeed = 1;
 		s_ctrl->sensor_state = CAM_SENSOR_INIT;
+		//Set camera HW detect flag, terry.long@blackshark.com, 2017.11.23
+#ifdef CONFIG_HW_DEV_DCT
+		if(0 == s_ctrl->soc_info.index){
+			CAM_ERR(CAM_SENSOR, "set camera HW detect flag DEV_PERIPHIAL_CAMERA_MAIN=%d", DEV_PERIPHIAL_CAMERA_MAIN);
+			set_hw_dev_flag(DEV_PERIPHIAL_CAMERA_MAIN);
+		}else if(2 == s_ctrl->soc_info.index){
+			CAM_ERR(CAM_SENSOR, "set camera HW detect flag DEV_PERIPHIAL_CAMERA_SLAVE=%d", DEV_PERIPHIAL_CAMERA_SLAVE);
+			set_hw_dev_flag(DEV_PERIPHIAL_CAMERA_SLAVE);
+		}else if(1 == s_ctrl->soc_info.index){
+			CAM_ERR(CAM_SENSOR, "set camera HW detect flag DEV_PERIPHIAL_CAMERA_REARAUX=%d", DEV_PERIPHIAL_CAMERA_REARAUX);
+			set_hw_dev_flag(DEV_PERIPHIAL_CAMERA_REARAUX);
+		}
+#endif
 	}
 		break;
 	case CAM_ACQUIRE_DEV: {
@@ -727,6 +1067,14 @@ int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 			CAM_ERR(CAM_SENSOR, "Sensor Power up failed");
 			goto release_mutex;
 		}
+
+		//Read imx376j & imx376k sensor internal otp about DPC and write to bin, terry.long@blackshark.com
+#ifdef CONFIG_CAMERA_DRIVER_SHARK
+		if(2 == s_ctrl->soc_info.index || 1 == s_ctrl->soc_info.index)
+		{
+			readDPCAddress(s_ctrl, s_ctrl->soc_info.index);
+		}
+#endif
 
 		s_ctrl->sensor_state = CAM_SENSOR_ACQUIRE;
 		CAM_INFO(CAM_SENSOR,
@@ -974,6 +1322,8 @@ int cam_sensor_power_up(struct cam_sensor_ctrl_t *s_ctrl)
 		return -EINVAL;
 	}
 
+	//add power up log, terry.long@blackshark.com, 2017.12.29
+	CAM_ERR(CAM_SENSOR, "power up, slot=%u, name=%s", soc_info->index, soc_info->dev_name);
 	rc = cam_sensor_core_power_up(power_info, soc_info);
 	if (rc < 0) {
 		CAM_ERR(CAM_SENSOR, "power up the core is failed:%d", rc);
@@ -1005,6 +1355,8 @@ int cam_sensor_power_down(struct cam_sensor_ctrl_t *s_ctrl)
 		CAM_ERR(CAM_SENSOR, "failed: power_info %pK", power_info);
 		return -EINVAL;
 	}
+	//add power down log, terry.long@blackshark.com, 2017.12.29
+	CAM_ERR(CAM_SENSOR, "power down, slot=%u, name=%s", soc_info->index, soc_info->dev_name);
 	rc = msm_camera_power_down(power_info, soc_info);
 	if (rc < 0) {
 		CAM_ERR(CAM_SENSOR, "power down the core is failed:%d", rc);

@@ -163,7 +163,6 @@ static u32 programmable_fetch_get_num_lines(
 	    timing->v_back_porch + timing->vsync_pulse_width;
 	u32 needed_vfp_lines = worst_case_needed_lines - start_of_frame_lines;
 	u32 actual_vfp_lines = 0;
-
 	/* Fetch must be outside active lines, otherwise undefined. */
 	if (start_of_frame_lines >= worst_case_needed_lines) {
 		SDE_DEBUG_VIDENC(vid_enc,

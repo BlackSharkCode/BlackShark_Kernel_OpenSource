@@ -231,6 +231,9 @@ struct sde_connector_ops {
 	 * Returns: positive value for success, negetive or zero for failure
 	 */
 	int (*check_status)(void *display);
+#if defined(CONFIG_IRIS2P_FULL_SUPPORT)
+	int (*cancel_esd_thread)(void *display);
+#endif
 
 	/**
 	 * cmd_transfer - Transfer command to the connected display panel

@@ -979,7 +979,7 @@ static int cam_jpeg_mgr_release_hw(void *hw_mgr_priv, void *release_hw_args)
 	}
 
 	mutex_unlock(&hw_mgr->hw_mgr_mutex);
-
+//	kfree(ctx_data->cdm_cmd);
 	rc = cam_jpeg_mgr_release_ctx(hw_mgr, ctx_data);
 	if (rc) {
 		mutex_unlock(&hw_mgr->hw_mgr_mutex);

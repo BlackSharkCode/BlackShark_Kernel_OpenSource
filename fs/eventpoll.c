@@ -1265,9 +1265,15 @@ static int ep_create_wakeup_source(struct epitem *epi)
 {
 	const char *name;
 	struct wakeup_source *ws;
+	char process_name[30] = {0};
+
+	snprintf(process_name, sizeof(process_name), "ev:%s", current->comm);
 
 	if (!epi->ep->ws) {
-		epi->ep->ws = wakeup_source_register("eventpoll");
+		epi->ep->ws = wakeup_source_register(process_name);
+#ifdef FACTORY_IMAGE
+		dump_stack();
+#endif
 		if (!epi->ep->ws)
 			return -ENOMEM;
 	}

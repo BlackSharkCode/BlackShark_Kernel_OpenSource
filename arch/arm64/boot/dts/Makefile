@@ -1,25 +1,12 @@
-dts-dirs += al
-dts-dirs += altera
-dts-dirs += amd
-dts-dirs += amlogic
-dts-dirs += apm
 dts-dirs += arm
-dts-dirs += broadcom
-dts-dirs += cavium
-dts-dirs += exynos
-dts-dirs += freescale
-dts-dirs += hisilicon
-dts-dirs += marvell
-dts-dirs += mediatek
-dts-dirs += nvidia
-dts-dirs += qcom
-dts-dirs += renesas
-dts-dirs += rockchip
-dts-dirs += socionext
-dts-dirs += sprd
-dts-dirs += xilinx
-dts-dirs += lg
-dts-dirs += zte
+#dts-dirs += qcom
+ifeq ($(CONFIG_ARCH_SDM845),y)
+define find_bs_dts_dirs
+$(addprefix $(1),$(shell find $(srctree)/$(src)/$(1) -type d -printf "%f\n" | tail -n +2))
+endef
+
+dts-dirs += $(call find_bs_dts_dirs,blackshark/shark/)
+endif
 
 subdir-y	:= $(dts-dirs)
 

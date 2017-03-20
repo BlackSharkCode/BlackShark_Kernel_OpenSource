@@ -706,6 +706,20 @@ config LEDS_QPNP_HAPTICS
 	  module provides haptic feedback for user actions such as a long press
 	  on the touch screen.
 
+config AW9120_LED
+       tristate "LED support for AW9120"
+       depends on LEDS_CLASS && I2C
+       help
+         This option enables support for the AW9120 RGB LED connected
+         through I2C. Say Y to enable support for the AW9120 LED.
+
+config LEDS_AW2015
+	tristate "LED Support for AW2015"
+	depends on LEDS_CLASS && I2C
+	help
+		this option enables support for the AW2015 RGB LED connected
+		through I2C. Say Y to enable support for the AW2015 LED
+
 comment "LED Triggers"
 source "drivers/leds/trigger/Kconfig"
 

@@ -1,0 +1,25 @@
+# Makefile template that is used by other Makefiles
+
+define _build-for-board-soc
+ifeq ($(CONFIG_BUILD_ARM64_DT_OVERLAY),y)
+	dtb-$(CONFIG_ARCH_SDM845)  += $(addsuffix .dtb,$(3))
+
+	dtbo-$(CONFIG_ARCH_SDM845) += $(addsuffix -$(1)-$(2)-overlay.dtbo,$(3))
+
+	$(foreach soc,$(3), \
+		$(soc)-$(1)-$(2)-overlay.dtbo-base := $(soc).dtb
+	)
+else
+	$$(error Only dtb overlay mode supported. Must set CONFIG_BUILD_ARM64_DT_OVERLAY=y)
+endif
+
+always		:= $$(dtb-y)
+subdir-y	:= $$(dts-dirs)
+clean-files	:= *.dtb
+endef
+
+# Generate build related variables for specific board and soc types
+define build-for-board-soc
+$(eval $(call _build-for-board-soc,$(1),$(2),$(3)))
+endef
+

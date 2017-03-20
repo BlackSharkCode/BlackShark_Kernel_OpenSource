@@ -1041,10 +1041,25 @@ __weak struct cpufreq_governor *cpufreq_default_governor(void)
 	return NULL;
 }
 
+#define BOOT_MODE_CMDLINE_MAX 30
+char g_boot_mode[BOOT_MODE_CMDLINE_MAX];
+
+static int __init get_boot_mode(char *str)
+{
+	strlcpy(g_boot_mode, str, BOOT_MODE_CMDLINE_MAX);
+	return 1;
+}
+__setup("androidboot.mode=", get_boot_mode);
+
 static int cpufreq_init_policy(struct cpufreq_policy *policy)
 {
 	struct cpufreq_governor *gov = NULL;
 	struct cpufreq_policy new_policy;
+
+	unsigned int freq_limit_choice[2]={1324800,1536000};
+	unsigned int freq_limit = 0;
+	unsigned int cluster = 0x01 & (policy->cpu >> 2);
+	printk("Boot_mode %s\n", g_boot_mode);
 
 	memcpy(&new_policy, policy, sizeof(*policy));
 
@@ -1068,6 +1083,16 @@ static int cpufreq_init_policy(struct cpufreq_policy *policy)
 		else
 			cpufreq_parse_governor(gov->name, &new_policy.policy,
 					       NULL);
+	}
+
+	if(!strncmp(g_boot_mode, "ffbm", 4)) {
+		freq_limit = freq_limit_choice[cluster];
+		printk("Limit %s CPU Frequency to %dMHz to save Power\n",cluster? "perf":"power", freq_limit);
+		if(0 == strcmp(gov->name, "performance")) {
+			policy->user_policy.max = freq_limit;
+			policy->max = freq_limit;
+			new_policy.max = freq_limit;
+		}
 	}
 	/* set default policy */
 	return cpufreq_set_policy(policy, &new_policy);
